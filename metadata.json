@@ -1,0 +1,6 @@
+{
+  "name": "Project Touchline – Football Intelligence",
+  "description": "Responsive football intelligence and match analysis web application for fans and researchers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Runtime Environment: HMR is disabled in AI Studio; ignore Vite WebSocket connection errors
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event.reason;
+        var message = (reason && (reason.message || reason.stack || String(reason))) || '';
+        if (
+          message.includes('WebSocket') ||
+          message.includes('createWebSocketModuleRunnerTransport') ||
+          message.includes('vite:ws')
+        ) {
+          event.preventDefault();
+        }
+      });
+      window.addEventListener('error', function (event) {
+        var message = (event && (event.message || '')) || '';
+        if (
+          message.includes('WebSocket') ||
+          message.includes('createWebSocketModuleRunnerTransport')
+        ) {
+          event.preventDefault();
+        }
+      });
+    </script>
+    <title>Project Touchline – Football Intelligence</title>
+    <meta name="description" content="Responsive football intelligence and match analysis web application for fans and researchers." />
+    <meta property="og:title" content="Project Touchline – Football Intelligence" />
+    <meta property="og:description" content="Responsive football intelligence and match analysis web application for fans and researchers." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-[#090D16] text-slate-100 antialiased selection:bg-emerald-500/20 selection:text-emerald-300">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
