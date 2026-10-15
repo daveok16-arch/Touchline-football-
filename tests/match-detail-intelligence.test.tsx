@@ -5,6 +5,19 @@ import { MatchDetailView } from '../src/views/MatchDetailView';
 import { FixtureService } from '../src/services/fixtureService';
 import { CompetitionStandings, Fixture } from '../src/types/football';
 
+/**
+ * Builds a kickoff ISO string at the given UTC hour on a future day (tomorrow by
+ * default). Keeping the time-of-day fixed preserves timezone assertions (e.g.
+ * 19:00 UTC -> 20:00 WAT) while guaranteeing the fixture is genuinely upcoming,
+ * so the test never expires as the wall clock advances.
+ */
+function futureKickoffIso(hourUtc: number, dayOffset = 1): string {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + dayOffset, hourUtc, 0, 0)
+  ).toISOString();
+}
+
 describe('MatchDetailView – Daily Match Intelligence Integration', () => {
   const mockStandingsPL: CompetitionStandings = {
     competition: {
@@ -66,7 +79,7 @@ describe('MatchDetailView – Daily Match Intelligence Integration', () => {
 
   const eligibleScheduledFixture: Fixture = {
     id: 'match-pl-101',
-    utcKickoffTime: '2026-10-14T19:00:00Z',
+    utcKickoffTime: futureKickoffIso(19),
     status: 'SCHEDULED',
     matchday: 13,
     competition: {

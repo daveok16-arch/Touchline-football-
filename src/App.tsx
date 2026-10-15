@@ -10,7 +10,7 @@ import { FixturesView } from './views/FixturesView';
 import { MatchDetailView } from './views/MatchDetailView';
 import { CompetitionsView } from './views/CompetitionsView';
 import { StandingsView } from './views/StandingsView';
-import { DEFAULT_TIMEZONE, getTimezoneAbbr } from './utils/timezone';
+import { DEFAULT_TIMEZONE, getResolvedTimezone, getTimezoneAbbr } from './utils/timezone';
 import {
   LayoutDashboard,
   Calendar,
@@ -212,7 +212,7 @@ export default function App() {
               Data provided via Football-Data.org Free Tier proxy.
             </p>
             <p className="font-mono text-slate-400">
-              Timezone: Africa/Lagos ({getTimezoneAbbr(timezoneId)})
+              Timezone: {getResolvedTimezone(timezoneId)} ({getTimezoneAbbr(timezoneId)})
             </p>
           </div>
         </div>

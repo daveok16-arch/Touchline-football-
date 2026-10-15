@@ -1,53 +1,20 @@
 import { Competition, CompetitionStandings, Fixture, HeadToHead, MatchScore, MatchStatus, StandingEntry } from '../types/football';
 import { FootballDataCompetition, FootballDataMatch, FootballDataMatchesResponse, FootballDataStandingsResponse } from '../types/footballData';
+import {
+  getRegistryEntryByFdCode,
+  getRegistryEntryById,
+} from './competitionRegistry';
+import { registryEntryToCompetition } from './competitionCatalogue';
 
+/**
+ * Football-data.org free tier only returns these competitions, so this is the
+ * allowlist the proxy requests. The broader app catalogue is derived separately
+ * (see competitionCatalogue.ts) and must not be confused with this allowlist.
+ */
 export const SUPPORTED_COMPETITION_CODES = ['PL', 'CL', 'PD', 'SA'] as const;
 
 export const FREE_PROVIDER_COMPETITIONS: Competition[] = [
-  {
-    id: 'PL',
-    name: 'Premier League',
-    code: 'PL',
-    type: 'LEAGUE',
-    country: 'England',
-    season: '2024/25',
-    emblem: 'https://crests.football-data.org/PL.png',
-    isDemo: false,
-    isSupported: true,
-  },
-  {
-    id: 'CL',
-    name: 'UEFA Champions League',
-    code: 'CL',
-    type: 'CUP',
-    country: 'Europe',
-    season: '2024/25',
-    emblem: 'https://crests.football-data.org/CL.png',
-    isDemo: false,
-    isSupported: true,
-  },
-  {
-    id: 'PD',
-    name: 'La Liga (Primera División)',
-    code: 'PD',
-    type: 'LEAGUE',
-    country: 'Spain',
-    season: '2024/25',
-    emblem: 'https://crests.football-data.org/laliga.png',
-    isDemo: false,
-    isSupported: true,
-  },
-  {
-    id: 'SA',
-    name: 'Serie A',
-    code: 'SA',
-    type: 'LEAGUE',
-    country: 'Italy',
-    season: '2024/25',
-    emblem: 'https://crests.football-data.org/SA.png',
-    isDemo: false,
-    isSupported: true,
-  },
+  ...SUPPORTED_COMPETITION_CODES.map((code) => registryEntryToCompetition(getRegistryEntryById(code)!)).filter(Boolean),
   {
     id: 'CAF',
     name: 'CAF Champions League',
@@ -97,15 +64,16 @@ export function mapFootballDataStatus(status: string): MatchStatus {
  */
 export function adaptFootballDataMatch(match: FootballDataMatch): Fixture {
   const compCode = match.competition?.code || 'UNKNOWN';
+  const registryEntry = getRegistryEntryByFdCode(compCode);
   const knownComp = FREE_PROVIDER_COMPETITIONS.find((c) => c.code === compCode);
 
   const competition: Competition = {
-    id: compCode,
-    name: match.competition?.name || knownComp?.name || compCode,
+    id: registryEntry?.id || compCode,
+    name: registryEntry?.name || match.competition?.name || knownComp?.name || compCode,
     code: compCode,
-    type: match.competition?.type === 'CUP' ? 'CUP' : 'LEAGUE',
-    emblem: match.competition?.emblem || knownComp?.emblem,
-    country: match.area?.name || knownComp?.country || 'International',
+    type: registryEntry?.type || (match.competition?.type === 'CUP' ? 'CUP' : 'LEAGUE'),
+    emblem: match.competition?.emblem || registryEntry?.emblem || knownComp?.emblem,
+    country: registryEntry?.country || match.area?.name || knownComp?.country || 'International',
     season: match.season?.startDate
       ? `${new Date(match.season.startDate).getFullYear()}/${String(new Date(match.season.endDate).getFullYear()).slice(-2)}`
       : knownComp?.season || '2024/25',
@@ -180,6 +148,7 @@ export function adaptFootballDataMatch(match: FootballDataMatch): Fixture {
     h2h,
     isDemo: false,
     isDelayed: true,
+    lastUpdated: match.lastUpdated,
     providerNotice:
       'Data supplied by football-data.org Free Tier (Delayed scores – Rate limit 10 req/min).',
   };
@@ -203,15 +172,16 @@ export function adaptFootballDataStandingsResponse(data: FootballDataStandingsRe
     return null;
   }
   const compCode = data.competition?.code || 'PL';
+  const registryEntry = getRegistryEntryByFdCode(compCode);
   const knownComp = FREE_PROVIDER_COMPETITIONS.find((c) => c.code === compCode);
 
   const competition: Competition = {
-    id: compCode,
-    name: data.competition?.name || knownComp?.name || compCode,
+    id: registryEntry?.id || compCode,
+    name: registryEntry?.name || data.competition?.name || knownComp?.name || compCode,
     code: compCode,
-    type: data.competition?.type === 'CUP' ? 'CUP' : 'LEAGUE',
-    emblem: data.competition?.emblem || knownComp?.emblem,
-    country: knownComp?.country || 'International',
+    type: registryEntry?.type || (data.competition?.type === 'CUP' ? 'CUP' : 'LEAGUE'),
+    emblem: data.competition?.emblem || registryEntry?.emblem || knownComp?.emblem,
+    country: registryEntry?.country || knownComp?.country || 'International',
     season: data.season?.startDate
       ? `${new Date(data.season.startDate).getFullYear()}/${String(new Date(data.season.endDate).getFullYear()).slice(-2)}`
       : knownComp?.season || '2024/25',

@@ -5,6 +5,7 @@
  */
 
 import { Competition, CompetitionStandings, Fixture, MatchScore, MatchStatus, StandingEntry } from '../types/football';
+import { COMPETITION_REGISTRY, getRegistryEntryBySportApiId } from './competitionRegistry';
 
 export interface SportApiTeamRef {
   id: number;
@@ -74,45 +75,16 @@ export interface SportApiStandingsEntry {
 /**
  * Bi-directional mapping between SportAPI league IDs and Touchline competition codes.
  */
-export const SPORTAPI_LEAGUE_MAP: Record<number, { code: string; name: string; country: string; type: 'LEAGUE' | 'CUP' }> = {
-  24: { code: 'PL', name: 'Premier League', country: 'England', type: 'LEAGUE' },
-  18: { code: 'CL', name: 'UEFA Champions League', country: 'Europe', type: 'CUP' },
-  22: { code: 'EL', name: 'UEFA Europa League', country: 'Europe', type: 'CUP' },
-  23: { code: 'ECL', name: 'UEFA Conference League', country: 'Europe', type: 'CUP' },
-  1: { code: 'PD', name: 'La Liga (Primera División)', country: 'Spain', type: 'LEAGUE' },
-  3: { code: 'SA', name: 'Serie A', country: 'Italy', type: 'LEAGUE' },
-  2: { code: 'BL1', name: 'Bundesliga', country: 'Germany', type: 'LEAGUE' },
-  58: { code: 'FAC', name: 'FA Cup', country: 'England', type: 'CUP' },
-  32: { code: 'CDR', name: 'Copa Del Rey', country: 'Spain', type: 'CUP' },
-  30: { code: 'CIT', name: 'Coppa Italia', country: 'Italy', type: 'CUP' },
-  31: { code: 'DFB', name: 'DFB Pokal', country: 'Germany', type: 'CUP' },
-  89: { code: 'MLS', name: 'US Major League Soccer', country: 'USA', type: 'LEAGUE' },
-  87: { code: 'SPL', name: 'Saudi Pro League', country: 'Saudi Arabia', type: 'LEAGUE' },
-  100: { code: 'J1', name: 'Japanese J1 League', country: 'Japan', type: 'LEAGUE' },
-  36: { code: 'BSA', name: 'Campeonato Brasileiro Série A', country: 'Brazil', type: 'LEAGUE' },
-  123: { code: 'AFCON', name: 'CAF Africa Cup of Nations', country: 'Africa', type: 'CUP' },
-  72: { code: 'AFCONQ', name: 'CAF AFCON Qualifiers', country: 'Africa', type: 'CUP' },
-};
+export const SPORTAPI_LEAGUE_MAP: Record<number, { code: string; name: string; country: string; type: 'LEAGUE' | 'CUP' }> = Object.fromEntries(
+  COMPETITION_REGISTRY.filter((c) => c.sportApiId !== undefined).map((c) => [
+    c.sportApiId as number,
+    { code: c.id, name: c.name, country: c.country, type: c.type === 'LEAGUE' || c.type === 'CUP' ? c.type : 'CUP' },
+  ])
+);
 
-export const CODE_TO_SPORTAPI_ID: Record<string, number> = {
-  PL: 24,
-  CL: 18,
-  EL: 22,
-  ECL: 23,
-  PD: 1,
-  SA: 3,
-  BL1: 2,
-  FAC: 58,
-  CDR: 32,
-  CIT: 30,
-  DFB: 31,
-  MLS: 89,
-  SPL: 87,
-  J1: 100,
-  BSA: 36,
-  AFCON: 123,
-  AFCONQ: 72,
-};
+export const CODE_TO_SPORTAPI_ID: Record<string, number> = Object.fromEntries(
+  COMPETITION_REGISTRY.filter((c) => c.sportApiId !== undefined).map((c) => [c.id, c.sportApiId as number])
+);
 
 /**
  * Maps SportAPI status string into internal MatchStatus enum.
@@ -151,14 +123,15 @@ export function mapSportApiStatus(status: string): MatchStatus {
  */
 export function adaptSportApiFixture(raw: SportApiFixture): Fixture {
   const leagueMeta = SPORTAPI_LEAGUE_MAP[raw.league_id];
-  const compCode = leagueMeta?.code || `SP-${raw.league_id}`;
+  const registryEntry = getRegistryEntryBySportApiId(raw.league_id);
+  const compCode = registryEntry?.id || leagueMeta?.code || `SP-${raw.league_id}`;
 
   const competition: Competition = {
     id: compCode,
-    name: raw.league_name || leagueMeta?.name || compCode,
+    name: registryEntry?.name || raw.league_name || leagueMeta?.name || compCode,
     code: compCode,
-    type: leagueMeta?.type || 'LEAGUE',
-    country: raw.league_zone || leagueMeta?.country || 'International',
+    type: registryEntry?.type || leagueMeta?.type || 'LEAGUE',
+    country: registryEntry?.country || raw.league_zone || leagueMeta?.country || 'International',
     season: '2026/27',
     isDemo: false,
     isSupported: true,
@@ -221,6 +194,7 @@ export function adaptSportApiFixture(raw: SportApiFixture): Fixture {
     h2h: null,
     isDemo: false,
     isDelayed: false,
+    lastUpdated: raw.updated_at,
     providerNotice: 'Data supplied by SportAPI.ai (2,000 req/day free tier).',
   };
 }
@@ -243,14 +217,15 @@ export function adaptSportApiStandings(
   if (!Array.isArray(entries) || entries.length === 0) return null;
 
   const leagueMeta = SPORTAPI_LEAGUE_MAP[leagueId];
-  const compCode = leagueMeta?.code || `SP-${leagueId}`;
+  const registryEntry = getRegistryEntryBySportApiId(leagueId);
+  const compCode = registryEntry?.id || leagueMeta?.code || `SP-${leagueId}`;
 
   const competition: Competition = {
     id: compCode,
-    name: leagueMeta?.name || compCode,
+    name: registryEntry?.name || leagueMeta?.name || compCode,
     code: compCode,
-    type: leagueMeta?.type || 'LEAGUE',
-    country: leagueMeta?.country || 'International',
+    type: registryEntry?.type || leagueMeta?.type || 'LEAGUE',
+    country: registryEntry?.country || leagueMeta?.country || 'International',
     season: '2026/27',
     isDemo: false,
     isSupported: true,

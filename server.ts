@@ -6,8 +6,6 @@ import {
   adaptFootballDataMatch,
   adaptFootballDataMatchesResponse,
   adaptFootballDataStandingsResponse,
-  FREE_PROVIDER_COMPETITIONS,
-  VERIFIED_SUPPORTED_COMPETITIONS,
   SUPPORTED_COMPETITION_CODES,
 } from './src/services/footballDataAdapter';
 import {
@@ -16,13 +14,27 @@ import {
   FootballDataStandingsResponse,
 } from './src/types/footballData';
 import { deduplicateFixtures } from './src/utils/matchIdentity';
-import { MatchOdds } from './src/types/football';
+import { Fixture, CompetitionStandings } from './src/types/football';
 import {
   adaptSportApiFixture,
   adaptSportApiFixturesResponse,
   adaptSportApiStandings,
   CODE_TO_SPORTAPI_ID,
 } from './src/services/sportApiAdapter';
+import { buildCompetitionCatalogue } from './src/services/competitionCatalogue';
+import { buildProviderStatus } from './src/services/providerStatus';
+import { summarizeFixtureFetch, resolveFixtureDateWindow } from './src/services/fixtureAvailability';
+import { STANDINGS_SUPPORTED_IDS } from './src/services/competitionRegistry';
+import {
+  evaluateMatchIntelligence,
+  SUPPORTED_INTELLIGENCE_COMPETITIONS,
+} from './src/services/predictionEngine';
+import { ProbabilityTriplet } from './src/services/predictionMetrics';
+import { validateOddsBatch } from './src/services/oddsSchema';
+import { buildOddsPayload } from './src/services/oddsEligibility';
+import { resolveOddsForFixture } from './src/services/oddsService';
+import { createQuotaSnapshot, QuotaSnapshot } from './src/services/oddsQuota';
+import { MatchCandidate } from './src/services/oddsFixtureMatch';
 
 dotenv.config();
 
@@ -65,6 +77,17 @@ function checkRateLimit(): { allowed: boolean; retryAfter: number } {
 function recordOutboundRequest() {
   requestTimestamps.push(Date.now());
 }
+
+/**
+ * Local monthly odds request budget. Configurable via ODDS_MONTHLY_REQUEST_BUDGET
+ * (default 300, below The Odds API free tier's 500/month, to leave headroom). The
+ * provider-reported quota is tracked alongside it; whichever is lower governs.
+ */
+const ODDS_MONTHLY_REQUEST_BUDGET = (() => {
+  const raw = Number(process.env.ODDS_MONTHLY_REQUEST_BUDGET);
+  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 300;
+})();
+let oddsQuota: QuotaSnapshot = createQuotaSnapshot(ODDS_MONTHLY_REQUEST_BUDGET, new Date());
 
 function getCached<T>(key: string): T | null {
   const entry = cache.get(key);
@@ -114,83 +137,17 @@ app.get('/api/status', (_req: Request, res: Response) => {
   const oddsEnabled = isOddsApiEnabled();
   cleanOldTimestamps();
 
-  res.json({
-    configured: Boolean(token && token.trim().length > 0),
-    provider: 'football-data.org',
-    tier: 'free',
-    rateLimitPerMinute: RATE_LIMIT_PER_MINUTE,
-    requestsUsedInLastMinute: requestTimestamps.length,
-    latencyNotice: 'Delayed scores (free tier latency: up to 15 minutes). Not real-time live data.',
-    supportedCompetitions: [
-      { code: 'PL', id: 2021, name: 'Premier League', country: 'England' },
-      { code: 'CL', id: 2001, name: 'UEFA Champions League', country: 'Europe' },
-      { code: 'PD', id: 2014, name: 'La Liga (Primera División)', country: 'Spain' },
-      { code: 'SA', id: 2019, name: 'Serie A', country: 'Italy' },
-    ],
-    unsupportedCompetitions: [
-      {
-        code: 'CAF',
-        name: 'CAF Champions League',
-        reason: 'Not covered by football-data.org free tier API.',
-      },
-    ],
-    providers: [
-      {
-        id: 'football-data.org',
-        name: 'Football-Data.org',
-        role: 'primary_fixtures',
-        configured: Boolean(token && token.trim().length > 0),
-        status: token ? 'active' : 'unconfigured',
-        tier: 'free',
-        rateLimit: '10 requests/minute',
-        supportedCompetitions: ['PL', 'CL', 'PD', 'SA', 'BL1', 'FL1', 'ELC', 'DED', 'PPL', 'BSA', 'CLI'],
-        latencyNotice: 'Delayed scores (free tier latency: up to 15 min).',
-        missingConfig: token ? undefined : 'FOOTBALL_DATA_API_KEY is not configured',
-      },
-      {
-        id: 'sportapi.ai',
-        name: 'SportAPI.ai',
-        role: 'secondary_fixtures',
-        configured: Boolean(sportApiToken && sportApiToken.trim().length > 0),
-        status: sportApiToken ? 'active' : 'unconfigured',
-        tier: 'free',
-        rateLimit: '2,000 requests/day',
-        supportedCompetitions: ['PL', 'CL', 'PD', 'SA', 'BL1', 'FL1', 'Domestic Cups', 'EL', 'ECL', 'MLS', 'Saudi Pro League', 'J1'],
-        latencyNotice: '1-minute polling interval, 30-60s goal pushes.',
-        missingConfig: sportApiToken ? undefined : 'SPORTAPI_KEY is not configured',
-      },
-      {
-        id: '5dollarfootballapi',
-        name: '5DollarFootballAPI',
-        role: 'odds',
-        configured: Boolean(fiveDollarToken && fiveDollarToken.trim().length > 0),
-        status: fiveDollarToken ? 'error' : 'unconfigured',
-        tier: 'free',
-        rateLimit: '60 requests/hour (max 20 req/min)',
-        supportedCompetitions: ['PL', 'PD', 'SA', 'BL1', 'FL1'],
-        latencyNotice: 'Real-time Bet365 odds markets.',
-        missingConfig: fiveDollarToken
-          ? 'FIVE_DOLLAR_KEY failed upstream authentication (HTTP 401 invalid_api_key). Provider stopped until resolved.'
-          : 'FIVE_DOLLAR_KEY is not configured',
-      },
-      {
-        id: 'the-odds-api',
-        name: 'The Odds API',
-        role: 'auxiliary_odds',
-        configured: Boolean(oddsApiToken && oddsApiToken.trim().length > 0 && oddsEnabled),
-        status: !oddsEnabled ? 'disabled' : oddsApiToken ? 'active' : 'unconfigured',
-        tier: 'free',
-        rateLimit: '500 credits/month (rapid credit depletion: markets * regions per call)',
-        supportedCompetitions: ['soccer_epl', 'soccer_uefa_champs_league'],
-        latencyNotice: 'Aggregated bookmaker lines.',
-        missingConfig: !oddsEnabled
-          ? 'The Odds API is kept disabled by policy (ENABLE_ODDS_API is not set to true to prevent quota burn).'
-          : oddsApiToken
-          ? undefined
-          : 'ODDS_API_KEY is not configured',
-      },
-    ],
-  });
+  res.json(
+    buildProviderStatus({
+      footballDataConfigured: Boolean(token && token.trim().length > 0),
+      sportApiConfigured: Boolean(sportApiToken && sportApiToken.trim().length > 0),
+      fiveDollarConfigured: Boolean(fiveDollarToken && fiveDollarToken.trim().length > 0),
+      oddsApiTokenConfigured: Boolean(oddsApiToken && oddsApiToken.trim().length > 0),
+      oddsApiEnabled: oddsEnabled,
+      rateLimitPerMinute: RATE_LIMIT_PER_MINUTE,
+      requestsUsedInLastMinute: requestTimestamps.length,
+    })
+  );
 });
 
 // 2. Competitions Directory Endpoint
@@ -202,12 +159,12 @@ app.get('/api/competitions', (_req: Request, res: Response) => {
       status: 'not_configured',
       message:
         'Football-Data.org API token is not configured. Add FOOTBALL_DATA_API_KEY to your environment variables to enable live data.',
-      competitions: VERIFIED_SUPPORTED_COMPETITIONS,
+      competitions: buildCompetitionCatalogue([]),
     });
   }
   return res.json({
     configured: true,
-    competitions: VERIFIED_SUPPORTED_COMPETITIONS,
+    competitions: buildCompetitionCatalogue([]),
   });
 });
 
@@ -226,6 +183,13 @@ app.get('/api/fixtures', async (req: Request, res: Response) => {
       matches: [],
     });
   }
+
+  // football-data.org only accepts an explicit date window of at most 10 days.
+  // An open-ended query is rejected with HTTP 400, so an explicit range is always sent.
+  const { dateFrom: fdDateFrom, dateTo: fdDateTo } = resolveFixtureDateWindow(
+    typeof dateFrom === 'string' ? dateFrom : null,
+    typeof dateTo === 'string' ? dateTo : null
+  );
 
   const sportApiToken = getSportApiToken();
 
@@ -247,7 +211,16 @@ app.get('/api/fixtures', async (req: Request, res: Response) => {
 
   try {
     let fdFixtures: any[] = [];
-    if (token) {
+    let fdRateLimited = false;
+    let fdError: string | null = null;
+
+    // Only call football-data.org when the request could match one of its
+    // competitions. Requesting a SportAPI-only competition must not burn the
+    // free-tier quota with a full unfiltered fetch.
+    const fdRequested =
+      !competition || competition === 'ALL' || SUPPORTED_COMPETITION_CODES.includes(competition as any);
+
+    if (token && fdRequested) {
       // Rate limit validation for football-data.org (10 req/min)
       const rl = checkRateLimit();
       if (rl.allowed) {
@@ -262,31 +235,38 @@ app.get('/api/fixtures', async (req: Request, res: Response) => {
           params.append('competitions', SUPPORTED_COMPETITION_CODES.join(','));
         }
 
-        if (dateFrom && typeof dateFrom === 'string') {
-          params.append('dateFrom', dateFrom);
-        }
-        if (dateTo && typeof dateTo === 'string') {
-          params.append('dateTo', dateTo);
-        }
+        if (fdDateFrom) params.append('dateFrom', fdDateFrom);
+        if (fdDateTo) params.append('dateTo', fdDateTo);
 
         url += `?${params.toString()}`;
 
-        recordOutboundRequest();
-        const upstreamRes = await fetch(url, {
-          headers: {
-            'X-Auth-Token': token,
-          },
-        });
+        try {
+          recordOutboundRequest();
+          const upstreamRes = await fetch(url, {
+            headers: {
+              'X-Auth-Token': token,
+            },
+          });
 
-        if (upstreamRes.ok) {
-          const rawData = (await upstreamRes.json()) as FootballDataMatchesResponse;
-          fdFixtures = adaptFootballDataMatchesResponse(rawData);
+          if (upstreamRes.ok) {
+            const rawData = (await upstreamRes.json()) as FootballDataMatchesResponse;
+            fdFixtures = adaptFootballDataMatchesResponse(rawData);
+          } else {
+            // Authentication failures, upstream errors and rate limits are surfaced
+            // as degradation, never silently swallowed as "no fixtures".
+            fdError = `football-data.org responded HTTP ${upstreamRes.status}`;
+          }
+        } catch (e: any) {
+          fdError = `football-data.org unreachable: ${e?.message || 'network error'}`;
         }
+      } else {
+        fdRateLimited = true;
       }
     }
 
     // Secondary provider: SportAPI.ai (incrementally enabled with 2,000 req/day quota)
     let spFixtures: any[] = [];
+    let spError: string | null = null;
     if (sportApiToken) {
       const spDate =
         dateFrom && typeof dateFrom === 'string'
@@ -307,11 +287,35 @@ app.get('/api/fixtures', async (req: Request, res: Response) => {
               );
             }
             spFixtures = matches;
+          } else {
+            spError = 'sportapi.ai returned an unexpected payload';
           }
+        } else {
+          spError = `sportapi.ai responded HTTP ${spRes.status}`;
         }
-      } catch {
+      } catch (e: any) {
         // SportAPI fetch failure is gracefully handled, preserving Football-Data
+        spError = `sportapi.ai unreachable: ${e?.message || 'network error'}`;
       }
+    }
+
+    // If the only configured fixtures provider is rate-limited, signal it honestly
+    // (429) instead of returning an empty list that looks like "no matches today".
+    const fetchSummary = summarizeFixtureFetch({
+      footballDataConfigured: Boolean(token),
+      sportApiConfigured: Boolean(sportApiToken),
+      footballDataRateLimited: fdRateLimited,
+      footballDataError: fdError,
+      sportApiError: spError,
+    });
+
+    if (fetchSummary.soleProviderRateLimited) {
+      res.setHeader('Retry-After', '30');
+      return res.status(429).json({
+        error: 'Free tier rate limit reached (10 requests/minute). Please retry shortly.',
+        retryAfter: 30,
+        matches: [],
+      });
     }
 
     const deduplicated = deduplicateFixtures([...fdFixtures, ...spFixtures]);
@@ -319,6 +323,8 @@ app.get('/api/fixtures', async (req: Request, res: Response) => {
     const payload = {
       configured: true,
       count: deduplicated.length,
+      degraded: fetchSummary.degraded,
+      notice: fetchSummary.notice,
       matches: deduplicated,
     };
 
@@ -461,9 +467,12 @@ app.get('/api/standings', async (req: Request, res: Response) => {
   const rawComp = (req.query.competition as string) || 'PL';
   const compCode = rawComp.toUpperCase();
 
-  if (!SUPPORTED_COMPETITION_CODES.includes(compCode as any)) {
+  // Only competitions with a working standings implementation are accepted, and
+  // that set is derived from the registry — never advertised as broader than it is.
+  const standingsAllowed = new Set<string>(STANDINGS_SUPPORTED_IDS);
+  if (!standingsAllowed.has(compCode)) {
     return res.status(400).json({
-      error: `Competition ${compCode} is not in the verified supported free tier competitions (PL, CL, PD, SA).`,
+      error: `Standings are only available for competitions with a working implementation (${STANDINGS_SUPPORTED_IDS.join(', ')}).`,
     });
   }
 
@@ -549,42 +558,193 @@ app.get('/api/standings', async (req: Request, res: Response) => {
 });
 
 // 6. Odds Endpoint (Strictly separate from fixtures, results, and standings)
+//
+// Odds are used only to compare against the FROZEN model's 1X2 probabilities. They never
+// feed the model, never modify fixtures/results/standings, and never produce a wager
+// recommendation. When no valid odds or no model prediction exists, the response is an
+// honest, ineligible payload rather than fabricated numbers.
+async function computeFrozenModelProbabilities(
+  matchId: string,
+  competitionCode: string
+): Promise<ProbabilityTriplet | null> {
+  const code = competitionCode.toUpperCase();
+  if (!SUPPORTED_INTELLIGENCE_COMPETITIONS.includes(code)) return null;
+
+  const fixture = await fetchFixtureForModel(matchId);
+  if (!fixture) return null;
+
+  const standings = await fetchStandingsForModel(code);
+  const intelligence = evaluateMatchIntelligence(fixture, { [code]: standings });
+  if (!intelligence.isEligible || !intelligence.probabilities) return null;
+
+  const p = intelligence.probabilities;
+  return { homeWin: p.homeWin, draw: p.draw, awayWin: p.awayWin };
+}
+
+/** Resolves a single fixture from whichever provider owns the id prefix. */
+async function fetchFixtureForModel(matchId: string): Promise<Fixture | null> {
+  const fdToken = getApiToken();
+  const spToken = getSportApiToken();
+
+  try {
+    if (matchId.startsWith('sp-')) {
+      if (!spToken) return null;
+      const cleanId = matchId.replace(/^sp-/, '').trim();
+      const r = await fetch(`https://sportapi.ai/api/fixtures/${cleanId}`, {
+        headers: { 'X-Api-Key': spToken },
+      });
+      if (!r.ok) return null;
+      const data = await r.json();
+      return data?.fixture ? adaptSportApiFixture(data.fixture) : null;
+    }
+    if (!fdToken) return null;
+    const cleanId = matchId.replace(/^fd-/, '').trim();
+    const r = await fetch(`https://api.football-data.org/v4/matches/${cleanId}`, {
+      headers: { 'X-Auth-Token': fdToken },
+    });
+    if (!r.ok) return null;
+    const raw = (await r.json()) as FootballDataMatch;
+    return adaptFootballDataMatch(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** Resolves standings from the same providers used by the standings endpoint. */
+async function fetchStandingsForModel(code: string): Promise<CompetitionStandings | null> {
+  const fdToken = getApiToken();
+  const spToken = getSportApiToken();
+
+  if (fdToken) {
+    try {
+      const r = await fetch(`https://api.football-data.org/v4/competitions/${code}/standings`, {
+        headers: { 'X-Auth-Token': fdToken },
+      });
+      if (r.ok) {
+        const raw = (await r.json()) as FootballDataStandingsResponse;
+        const adapted = adaptFootballDataStandingsResponse(raw);
+        if (adapted) return adapted;
+      }
+    } catch {
+      // fall through to SportAPI
+    }
+  }
+
+  const spLeagueId = CODE_TO_SPORTAPI_ID[code];
+  if (spToken && spLeagueId) {
+    try {
+      const r = await fetch(`https://sportapi.ai/api/standings/${spLeagueId}`, {
+        headers: { 'X-Api-Key': spToken },
+      });
+      if (r.ok) {
+        const data = await r.json();
+        if (data?.success && Array.isArray(data.data)) {
+          return adaptSportApiStandings(spLeagueId, data.data);
+        }
+      }
+    } catch {
+      // no standings available
+    }
+  }
+  return null;
+}
+
+/**
+ * Loads canonical fixture candidates for a competition, for odds event matching.
+ * Uses the same provider chain as the fixtures endpoint so odds can only attach to a
+ * fixture the app itself can see. Returns [] when the provider has nothing (never invents).
+ */
+async function loadOddsCandidates(competitionCode: string): Promise<MatchCandidate[]> {
+  try {
+    const fixtures = await loadFixturesForCompetition(competitionCode);
+    return fixtures
+      .filter((f) => (f.status === 'SCHEDULED' || f.status === 'TIMED') && f.utcKickoffTime)
+      .map((f) => ({
+        fixtureId: f.id,
+        homeName: f.homeTeam?.name || '',
+        awayName: f.awayTeam?.name || '',
+        kickoffIso: f.utcKickoffTime,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/** Resolves the fixtures for one competition from the configured providers. */
+async function loadFixturesForCompetition(competitionCode: string): Promise<Fixture[]> {
+  const fdToken = getApiToken();
+  const spToken = getSportApiToken();
+  const out: Fixture[] = [];
+
+  if (fdToken) {
+    try {
+      const { dateFrom, dateTo } = resolveFixtureDateWindow(null, null);
+      const url = `https://api.football-data.org/v4/competitions/${competitionCode}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`;
+      const r = await fetch(url, { headers: { 'X-Auth-Token': fdToken } });
+      if (r.ok) {
+        const raw = await r.json();
+        const matches: FootballDataMatch[] = raw?.matches ?? [];
+        out.push(...matches.map(adaptFootballDataMatch));
+      }
+    } catch {
+      // fall through to SportAPI
+    }
+  }
+
+  const spLeagueId = CODE_TO_SPORTAPI_ID[competitionCode];
+  if (out.length === 0 && spToken && spLeagueId) {
+    try {
+      const r = await fetch(`https://sportapi.ai/api/fixtures?league=${spLeagueId}`, {
+        headers: { 'X-Api-Key': spToken },
+      });
+      if (r.ok) {
+        const data = await r.json();
+        if (data?.success && Array.isArray(data.data)) {
+          out.push(...data.data.map(adaptSportApiFixture));
+        }
+      }
+    } catch {
+      // no fixtures available
+    }
+  }
+
+  return deduplicateFixtures(out);
+}
+
 app.get('/api/odds/:id', async (req: Request, res: Response) => {
   const matchId = req.params.id;
-  const fiveDollarToken = getFiveDollarToken();
+  const competitionCode = String(req.query.competition || '').toUpperCase();
   const oddsApiToken = getOddsApiToken();
   const oddsEnabled = isOddsApiEnabled();
 
-  // If no odds provider key is configured or odds are disabled, return an honest unavailable status
-  if (!fiveDollarToken && (!oddsApiToken || !oddsEnabled)) {
-    const oddsPayload: MatchOdds = {
-      matchId,
-      provider: 'none',
-      available: false,
-      notice: !oddsEnabled
-        ? 'Odds are disabled by configuration (ENABLE_ODDS_API=false).'
-        : 'Odds providers not configured. Missing FIVE_DOLLAR_KEY or ODDS_API_KEY in environment.',
-    };
-    return res.json(oddsPayload);
-  }
+  // 5DollarFootballAPI is kept disabled as an odds source: its key is invalid/revoked and
+  // it must not be retried. It is intentionally not called here.
 
-  // If fiveDollarToken is configured, report honest authentication error from upstream
-  if (fiveDollarToken) {
-    return res.json({
-      matchId,
-      provider: '5dollarfootballapi',
-      available: false,
-      notice: 'Odds feed unavailable: FIVE_DOLLAR_KEY failed upstream authentication (HTTP 401 invalid_api_key). Provider stopped until credentials are renewed.',
-    });
-  }
-
-  // Handle configured odds providers safely (timeout, rate limit, no mock substitution)
-  return res.json({
+  const { result: fetchResult, quota } = await resolveOddsForFixture(
     matchId,
-    provider: 'none',
-    available: false,
-    notice: 'No odds feed available for this match under the active provider contract.',
-  });
+    competitionCode,
+    {
+      oddsApiKey: oddsApiToken,
+      oddsApiEnabled: oddsEnabled,
+      monthlyBudget: ODDS_MONTHLY_REQUEST_BUDGET,
+    },
+    oddsQuota,
+    { loadCandidates: loadOddsCandidates }
+  );
+  oddsQuota = quota;
+
+  const validated = validateOddsBatch(fetchResult.observations);
+
+  // Compute the frozen model's 1X2 probabilities for this fixture, if we can do so
+  // honestly. No fixture/standings data means no model probabilities and no analysis.
+  let modelProbabilities: ProbabilityTriplet | null = null;
+  if (fetchResult.status === 'ok' && competitionCode) {
+    modelProbabilities = await computeFrozenModelProbabilities(matchId, competitionCode);
+  }
+
+  return res.json(
+    buildOddsPayload({ matchId, fetch: fetchResult, validated, modelProbabilities })
+  );
 });
 
 // Vite Middleware for Development / Static serving for Production

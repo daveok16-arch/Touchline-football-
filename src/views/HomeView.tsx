@@ -201,7 +201,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="bg-[#090D16]/60 border border-slate-800 rounded-lg p-3">
             <span className="text-xs text-slate-400 block">Timezone</span>
             <span className="text-sm font-semibold text-slate-300 font-mono mt-0.5 block truncate">
-              {getTimezoneAbbr(timezoneId)} (UTC+1)
+              {getTimezoneAbbr(timezoneId)}
             </span>
           </div>
         </div>

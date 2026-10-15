@@ -132,6 +132,8 @@ export interface Fixture {
   isDemo?: boolean;
   isDelayed?: boolean;
   providerNotice?: string;
+  /** ISO timestamp of when the provider last updated this fixture (live freshness). */
+  lastUpdated?: string;
 }
 
 export interface StandingEntry {

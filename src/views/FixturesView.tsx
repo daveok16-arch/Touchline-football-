@@ -28,6 +28,7 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [degradationNotice, setDegradationNotice] = useState<string | null>(null);
 
   // Filters
   const [selectedDate, setSelectedDate] = useState<string>('ALL');
@@ -58,9 +59,10 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
     setLoading(true);
     setError(null);
     setErrorCode(null);
+    setDegradationNotice(null);
 
     Promise.all([
-      FixtureService.getFixtures({
+      FixtureService.getFixturesWithMeta({
         dateKey: selectedDate,
         competitionId: selectedCompetition,
         status: selectedStatus,
@@ -69,9 +71,10 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
       }),
       FixtureService.getCompetitions(),
     ])
-      .then(([fixs, comps]) => {
+      .then(([meta, comps]) => {
         if (!isMounted) return;
-        setFixtures(fixs);
+        setFixtures(meta.fixtures);
+        setDegradationNotice(meta.degraded ? meta.notice : null);
         setCompetitions(comps);
         setLoading(false);
       })
@@ -137,6 +140,14 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
         )}
       </div>
 
+      {/* Subtle degradation notice: distinguishes provider health from "no fixtures" */}
+      {degradationNotice && !loading && (
+        <div className="flex items-start gap-2 text-xs text-amber-300/90 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
+          <span aria-hidden="true" className="mt-0.5">•</span>
+          <span>{degradationNotice} Some matches may be missing or delayed.</span>
+        </div>
+      )}
+
       {/* Filter Controls Panel */}
       <div className="bg-[#0F172A] border border-slate-800 rounded-xl p-4 sm:p-5 space-y-4">
         {/* Top Filter Row: Search & Status */}
@@ -176,7 +187,7 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
                 {status === 'ALL'
                   ? 'All'
                   : status === 'LIVE'
-                  ? 'In Play'
+                  ? 'Live'
                   : status === 'SCHEDULED'
                   ? 'Scheduled'
                   : 'Full Time'}

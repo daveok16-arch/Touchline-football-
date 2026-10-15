@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Competition, Fixture } from '../types/football';
 import { FixtureService } from '../services/fixtureService';
+import { getRegistryEntryById } from '../services/competitionRegistry';
 import { EmptyState } from '../components/EmptyState';
 import { Trophy, Calendar, ArrowRight } from 'lucide-react';
 
@@ -146,13 +147,15 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                     <span>View Fixtures</span>
                     <ArrowRight className="w-3 h-3" />
                   </button>
-                  <button
-                    onClick={() => onNavigate('standings')}
-                    className="inline-flex items-center gap-1.5 font-medium text-slate-400 hover:text-slate-200 transition-colors"
-                  >
-                    <Trophy className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Table</span>
-                  </button>
+                  {getRegistryEntryById(comp.id)?.standings && (
+                    <button
+                      onClick={() => onNavigate('standings')}
+                      className="inline-flex items-center gap-1.5 font-medium text-slate-400 hover:text-slate-200 transition-colors"
+                    >
+                      <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Table</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );

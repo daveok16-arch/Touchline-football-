@@ -2,7 +2,8 @@ import { Competition, CompetitionStandings, Fixture } from '../types/football';
 import { ProviderStatus } from '../types/footballData';
 import { getDateKeyInTimezone } from '../utils/timezone';
 import { deduplicateFixtures } from '../utils/matchIdentity';
-import { VERIFIED_SUPPORTED_COMPETITIONS } from './footballDataAdapter';
+import { buildCompetitionCatalogue, canonicalizeCompetition } from './competitionCatalogue';
+import { getRegistryEntryById } from './competitionRegistry';
 
 export interface FixtureFilterOptions {
   dateKey?: string; // YYYY-MM-DD or 'ALL'
@@ -51,6 +52,17 @@ export class FixtureService {
    * Fetches real fixtures from backend proxy and applies client filters.
    */
   static async getFixtures(filters: FixtureFilterOptions = {}): Promise<Fixture[]> {
+    const { fixtures } = await FixtureService.getFixturesWithMeta(filters);
+    return fixtures;
+  }
+
+  /**
+   * Same as getFixtures, but also returns the provider degradation notice (if any)
+   * so views can surface stale/unavailable data subtly without a disruptive banner.
+   */
+  static async getFixturesWithMeta(
+    filters: FixtureFilterOptions = {}
+  ): Promise<{ fixtures: Fixture[]; degraded: boolean; notice: string | null }> {
     const tzId = filters.timezoneId || 'Africa/Lagos';
 
     // Build URL query params for server proxy
@@ -60,6 +72,8 @@ export class FixtureService {
     }
 
     let rawMatches: Fixture[] = [];
+    let degraded = false;
+    let notice: string | null = null;
     try {
       const res = await fetch(`/api/fixtures?${queryParams.toString()}`);
       if (res.status === 503) {
@@ -79,6 +93,8 @@ export class FixtureService {
       }
       const data = await res.json();
       rawMatches = Array.isArray(data.matches) ? data.matches : [];
+      degraded = Boolean(data.degraded);
+      notice = typeof data.notice === 'string' ? data.notice : null;
     } catch (err: any) {
       if (err?.code === 'PROVIDER_NOT_CONFIGURED' || err?.code === 'RATE_LIMITED') {
         throw err;
@@ -88,7 +104,11 @@ export class FixtureService {
       throw genericErr;
     }
 
-    let results = [...rawMatches];
+    // Canonicalize each fixture's competition so both providers collapse to one identity.
+    let results = rawMatches.map((fixture) => {
+      const canonical = canonicalizeCompetition(fixture.competition);
+      return canonical ? { ...fixture, competition: canonical } : fixture;
+    });
 
     // Filter by Date in selected timezone
     if (filters.dateKey && filters.dateKey !== 'ALL') {
@@ -156,7 +176,7 @@ export class FixtureService {
       return safeA - safeB;
     });
 
-    return results;
+    return { fixtures: results, degraded, notice };
   }
 
   /**
@@ -201,10 +221,28 @@ export class FixtureService {
   }
 
   /**
-   * Returns verified supported competitions.
+   * Returns the derived competition catalogue: every competition genuinely available
+   * from the integrated providers, canonicalized and deduplicated. Fetches current
+   * fixtures to admit any newly discovered competition safely (no invented metadata).
    */
   static async getCompetitions(): Promise<Competition[]> {
-    return VERIFIED_SUPPORTED_COMPETITIONS;
+    let observedFixtures: Fixture[] = [];
+    try {
+      observedFixtures = await FixtureService.getFixtures({});
+    } catch {
+      // Catalogue still derives from the verified registry when fixtures are unavailable.
+      observedFixtures = [];
+    }
+    return buildCompetitionCatalogue(observedFixtures);
+  }
+
+  /**
+   * Returns the verified registry competitions only (no live fixture fetch).
+   * Used by the standings selector, which is limited to competitions with a working
+   * standings implementation.
+   */
+  static getStandingsSupportedCompetitions(): Competition[] {
+    return buildCompetitionCatalogue([]).filter((c) => getRegistryEntryById(c.id)?.standings === true);
   }
 
   /**

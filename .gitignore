@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+.phase3-cache/
+.phaseQ-shadow/
+.phaseS-collector/

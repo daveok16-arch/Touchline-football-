@@ -8,6 +8,7 @@ import {
   isGenuinelyUpcomingFixture,
 } from '../services/predictionEngine';
 import { formatKickoffFull, formatKickoffTime, getTimezoneAbbr } from '../utils/timezone';
+import { isFixtureStale } from '../utils/freshness';
 import { EmptyState } from '../components/EmptyState';
 import {
   ArrowLeft,
@@ -246,10 +247,12 @@ export const MatchDetailView: React.FC<MatchDetailViewProps> = ({
 
   const isFinished = fixture.status === 'FINISHED';
   const isLive = fixture.status === 'IN_PLAY' || fixture.status === 'PAUSED';
+  const isHalfTime = fixture.status === 'PAUSED';
   const isScheduled = fixture.status === 'SCHEDULED' || fixture.status === 'TIMED';
   const isPostponed = fixture.status === 'POSTPONED';
   const isSuspended = fixture.status === 'SUSPENDED';
   const isCancelled = fixture.status === 'CANCELLED';
+  const isStale = isFixtureStale(fixture);
 
   const kickoffTimeStr = formatKickoffTime(fixture.utcKickoffTime, timezoneId);
   const fullDateTime = formatKickoffFull(fixture.utcKickoffTime, timezoneId);
@@ -341,8 +344,12 @@ export const MatchDetailView: React.FC<MatchDetailViewProps> = ({
                     <div className="mt-2 text-xs font-mono">
                       {isLive && (
                         <span className="text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded font-semibold">
-                          {fixture.isDelayed ? 'Delayed – In-Play' : 'In-Play'}
-                          {fixture.minute ? ` • ${fixture.minute}'` : ''}
+                          {isHalfTime
+                            ? 'Half-Time'
+                            : fixture.isDelayed
+                            ? 'Delayed – In-Play'
+                            : 'In-Play'}
+                          {!isHalfTime && fixture.minute ? ` • ${fixture.minute}'` : ''}
                         </span>
                       )}
                       {isFinished && (
@@ -351,6 +358,11 @@ export const MatchDetailView: React.FC<MatchDetailViewProps> = ({
                         </span>
                       )}
                     </div>
+                    {isStale && (
+                      <span className="mt-1.5 text-[10px] font-mono text-slate-400 border border-slate-700 rounded px-1.5 py-0.5">
+                        Score may be stale
+                      </span>
+                    )}
                     {fixture.score.halftime && fixture.score.halftime.home !== null && fixture.score.halftime.away !== null && (
                       <span className="text-[11px] text-slate-400 font-mono mt-1.5">
                         Halftime: {fixture.score.halftime.home} - {fixture.score.halftime.away}

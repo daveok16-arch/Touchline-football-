@@ -129,7 +129,7 @@ describe('Competition Headings & Grouping Integrity', () => {
   });
 
   it('renders exactly one heading for each competition in FixturesView UI when fixtures are interleaved', async () => {
-    vi.spyOn(FixtureService, 'getFixtures').mockResolvedValue(mockInterleavedFixtures);
+    vi.spyOn(FixtureService, 'getFixturesWithMeta').mockResolvedValue({ fixtures: mockInterleavedFixtures, degraded: false, notice: null });
     vi.spyOn(FixtureService, 'getCompetitions').mockResolvedValue([
       { id: 'PL', code: 'PL', name: 'Premier League', type: 'LEAGUE', country: 'England', season: '2024/25' },
       { id: 'CL', code: 'CL', name: 'UEFA Champions League', type: 'CUP', country: 'Europe', season: '2024/25' },
@@ -179,7 +179,7 @@ describe('Competition Headings & Grouping Integrity', () => {
 
   it('triggers onSelectFixture when a fixture card is clicked under its competition heading', async () => {
     const onSelect = vi.fn();
-    vi.spyOn(FixtureService, 'getFixtures').mockResolvedValue(mockInterleavedFixtures);
+    vi.spyOn(FixtureService, 'getFixturesWithMeta').mockResolvedValue({ fixtures: mockInterleavedFixtures, degraded: false, notice: null });
     vi.spyOn(FixtureService, 'getCompetitions').mockResolvedValue([]);
 
     render(
@@ -204,7 +204,7 @@ describe('Competition Headings & Grouping Integrity', () => {
   it('ensures filtering by search or status preserves single heading without creating ghost duplicates', async () => {
     // Return only matches for Arsenal
     const filteredMatches = mockInterleavedFixtures.filter((f) => f.id === 'cl-1');
-    vi.spyOn(FixtureService, 'getFixtures').mockResolvedValue(filteredMatches);
+    vi.spyOn(FixtureService, 'getFixturesWithMeta').mockResolvedValue({ fixtures: filteredMatches, degraded: false, notice: null });
     vi.spyOn(FixtureService, 'getCompetitions').mockResolvedValue([]);
 
     render(
@@ -271,10 +271,12 @@ describe('Competition Headings & Grouping Integrity', () => {
       },
     ];
 
-    vi.spyOn(FixtureService, 'getFixtures').mockResolvedValue(
-      // Simulate calling through FixtureService (which applies deduplication)
-      groupFixturesByCompetition(liveDuplicatesFeed).flatMap((g) => g.fixtures)
-    );
+    vi.spyOn(FixtureService, 'getFixturesWithMeta').mockResolvedValue({
+        fixtures: // Simulate calling through FixtureService (which applies deduplication)
+      groupFixturesByCompetition(liveDuplicatesFeed).flatMap((g) => g.fixtures),
+        degraded: false,
+        notice: null,
+      });
     vi.spyOn(FixtureService, 'getCompetitions').mockResolvedValue([
       { id: 'CL', code: 'CL', name: 'UEFA Champions League', type: 'CUP', country: 'Europe', season: '2026/27' },
     ]);
@@ -351,9 +353,11 @@ describe('Competition Headings & Grouping Integrity', () => {
       },
     ];
 
-    vi.spyOn(FixtureService, 'getFixtures').mockResolvedValue(
-      groupFixturesByCompetition(liveDuplicatesFeed).flatMap((g) => g.fixtures)
-    );
+    vi.spyOn(FixtureService, 'getFixturesWithMeta').mockResolvedValue({
+        fixtures: groupFixturesByCompetition(liveDuplicatesFeed).flatMap((g) => g.fixtures),
+        degraded: false,
+        notice: null,
+      });
     vi.spyOn(FixtureService, 'getCompetitions').mockResolvedValue([]);
     vi.spyOn(FixtureService, 'getAllSupportedStandings').mockResolvedValue({
       PL: null,

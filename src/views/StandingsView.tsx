@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CompetitionStandings, Competition } from '../types/football';
 import { FixtureService } from '../services/fixtureService';
 import { EmptyState } from '../components/EmptyState';
-import { VERIFIED_SUPPORTED_COMPETITIONS } from '../services/footballDataAdapter';
 import { Trophy, RefreshCw } from 'lucide-react';
 
 export const StandingsView: React.FC = () => {
-  const [selectedCompCode, setSelectedCompCode] = useState<string>('PL');
+  const standingsCompetitions = useMemo<Competition[]>(
+    () => FixtureService.getStandingsSupportedCompetitions(),
+    []
+  );
+  const [selectedCompCode, setSelectedCompCode] = useState<string>(standingsCompetitions[0]?.code || 'PL');
   const [standings, setStandings] = useState<CompetitionStandings | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,8 +45,8 @@ export const StandingsView: React.FC = () => {
   };
 
   const activeComp =
-    VERIFIED_SUPPORTED_COMPETITIONS.find((c) => c.code === selectedCompCode) ||
-    VERIFIED_SUPPORTED_COMPETITIONS[0];
+    standingsCompetitions.find((c) => c.code === selectedCompCode) ||
+    standingsCompetitions[0];
 
   return (
     <div className="space-y-6 pb-16 max-w-5xl mx-auto">
@@ -66,7 +69,7 @@ export const StandingsView: React.FC = () => {
 
         {/* Competition Selector Tabs */}
         <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-lg self-start sm:self-auto">
-          {VERIFIED_SUPPORTED_COMPETITIONS.map((c) => (
+          {standingsCompetitions.map((c) => (
             <button
               key={c.code}
               onClick={() => setSelectedCompCode(c.code)}

@@ -4,7 +4,7 @@
  * using kickoff date, canonical competition, and normalized club names.
  */
 
-import { Fixture } from '../types/football';
+import { Fixture, MatchScore } from '../types/football';
 import { getCanonicalCompetitionMeta } from './competitionGrouping';
 
 /**
@@ -180,6 +180,49 @@ export function generateMatchIdentity(fixture: Fixture): string {
 }
 
 /**
+ * Chooses the more trustworthy score between two equivalent fixtures.
+ *
+ * Trust rules (in order):
+ * 1. FINISHED records carry the final score and always win.
+ * 2. A fresher (non-delayed) provider wins over a delayed one, even if its goal
+ *    count is lower — a live score must never be replaced by a lagging score.
+ * 3. Otherwise the higher goal count wins (a live score that has advanced).
+ */
+function choosePreferredScore(
+  canonical: Fixture,
+  incoming: Fixture,
+  canonicalWeight: number,
+  incomingWeight: number
+): { score: MatchScore; fromIncoming: boolean } | null {
+  const a = canonical.score;
+  const b = incoming.score;
+  if (!a && !b) return null;
+  if (!a) return { score: { ...b! }, fromIncoming: true };
+  if (!b) return { score: { ...a }, fromIncoming: false };
+
+  const aFinal = canonical.status === 'FINISHED';
+  const bFinal = incoming.status === 'FINISHED';
+  if (bFinal && !aFinal) return { score: { ...b }, fromIncoming: true };
+  if (aFinal && !bFinal) return { score: { ...a }, fromIncoming: false };
+
+  const aGoals = (a.home ?? 0) + (a.away ?? 0);
+  const bGoals = (b.home ?? 0) + (b.away ?? 0);
+
+  let preferIncoming: boolean;
+  if (bFinal && aFinal) {
+    preferIncoming = bGoals > aGoals;
+  } else if (incoming.isDelayed === false && canonical.isDelayed === true) {
+    preferIncoming = true;
+  } else if (incoming.isDelayed === true && canonical.isDelayed === false) {
+    preferIncoming = false;
+  } else {
+    preferIncoming = bGoals > aGoals || (incomingWeight > canonicalWeight && (b.home != null || b.away != null));
+  }
+
+  return preferIncoming ? { score: { ...b }, fromIncoming: true } : { score: { ...a }, fromIncoming: false };
+}
+
+/**
  * Merges metadata between equivalent fixtures from multiple providers.
  * Retains the primary fixture's structural identity while adopting updated
  * live scores, minutes, match statuses, and enriching missing details.
@@ -187,11 +230,12 @@ export function generateMatchIdentity(fixture: Fixture): string {
 export function mergeFixtureMetadata(canonical: Fixture, incoming: Fixture): Fixture {
   const merged: Fixture = { ...canonical };
 
-  // Status priority hierarchy: CANCELLED/POSTPONED > FINISHED > IN_PLAY/PAUSED > SCHEDULED/TIMED
+  // Status priority hierarchy: CANCELLED/POSTPONED/SUSPENDED > FINISHED > IN_PLAY/PAUSED > SCHEDULED/TIMED
   const getStatusWeight = (st?: string): number => {
     switch (st) {
       case 'CANCELLED':
       case 'POSTPONED':
+      case 'SUSPENDED':
         return 5;
       case 'FINISHED':
         return 4;
@@ -220,35 +264,20 @@ export function mergeFixtureMetadata(canonical: Fixture, incoming: Fixture): Fix
     merged.minute = incoming.minute;
   }
 
-  // Score resolution:
-  // Retain updated live scores (SportAPI real-time or higher goal count in progress)
-  if (!merged.score && incoming.score) {
-    merged.score = { ...incoming.score };
-  } else if (merged.score && incoming.score) {
-    const canonicalGoals = (merged.score.home ?? 0) + (merged.score.away ?? 0);
-    const incomingGoals = (incoming.score.home ?? 0) + (incoming.score.away ?? 0);
-
-    const shouldPreferIncomingScore =
-      (incoming.isDelayed === false && merged.isDelayed === true) ||
-      incomingGoals > canonicalGoals ||
-      (incomingWeight > canonicalWeight && (incoming.score.home != null || incoming.score.away != null));
-
-    if (shouldPreferIncomingScore) {
-      merged.score = {
-        home: incoming.score.home ?? merged.score.home,
-        away: incoming.score.away ?? merged.score.away,
-        halftime: merged.score.halftime ?? incoming.score.halftime,
-      };
-    } else {
-      merged.score = {
-        ...merged.score,
-        halftime: merged.score.halftime ?? incoming.score.halftime,
-      };
-    }
-  }
-
-  // Latency & Real-Time flag: if either provider is not delayed, mark merged as not delayed
-  if (incoming.isDelayed === false || canonical.isDelayed === false) {
+  // Score resolution (see choosePreferredScore for the trust rules)
+  const preferred = choosePreferredScore(canonical, incoming, canonicalWeight, incomingWeight);
+  if (preferred) {
+    const halftime = merged.score?.halftime ?? incoming.score?.halftime;
+    merged.score = {
+      home: preferred.score.home ?? null,
+      away: preferred.score.away ?? null,
+      halftime,
+    };
+    // Latency follows the provider that supplied the retained score, so a delayed
+    // provider's score is never presented as real-time.
+    merged.isDelayed = preferred.fromIncoming ? incoming.isDelayed : canonical.isDelayed;
+  } else if (canonical.isDelayed === false || incoming.isDelayed === false) {
+    // No score to mislabel; a real-time provider still supplies fresher live state.
     merged.isDelayed = false;
   }
 
@@ -268,6 +297,14 @@ export function mergeFixtureMetadata(canonical: Fixture, incoming: Fixture): Fix
   }
   if (merged.awayTeam && incoming.awayTeam && !merged.awayTeam.crest && incoming.awayTeam.crest) {
     merged.awayTeam = { ...merged.awayTeam, crest: incoming.awayTeam.crest };
+  }
+
+  // Provenance: prefer the fresher provider's notice when it supplied the retained data.
+  if (preferred?.fromIncoming && incoming.providerNotice) {
+    merged.providerNotice = incoming.providerNotice;
+  }
+  if (preferred?.fromIncoming && incoming.lastUpdated) {
+    merged.lastUpdated = incoming.lastUpdated;
   }
 
   return merged;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Fixture } from '../types/football';
 import { formatKickoffTime } from '../utils/timezone';
+import { isFixtureStale } from '../utils/freshness';
 import { ChevronRight } from 'lucide-react';
 
 interface FixtureCardProps {
@@ -20,10 +21,12 @@ export const FixtureCard: React.FC<FixtureCardProps> = ({
   const kickoffStr = formatKickoffTime(fixture.utcKickoffTime, timezoneId);
   const isFinished = fixture.status === 'FINISHED';
   const isLive = fixture.status === 'IN_PLAY' || fixture.status === 'PAUSED';
+  const isHalfTime = fixture.status === 'PAUSED';
   const isScheduled = fixture.status === 'SCHEDULED' || fixture.status === 'TIMED';
   const isPostponed = fixture.status === 'POSTPONED';
   const isSuspended = fixture.status === 'SUSPENDED';
   const isCancelled = fixture.status === 'CANCELLED';
+  const isStale = isFixtureStale(fixture);
 
   const homeName = fixture.homeTeam?.name || 'Home Club';
   const homeShort = fixture.homeTeam?.shortName || homeName;
@@ -68,12 +71,24 @@ export const FixtureCard: React.FC<FixtureCardProps> = ({
 
         {/* Status or Kickoff */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {isStale && (
+            <span
+              className="text-[10px] font-mono text-slate-400 border border-slate-700 rounded px-1 py-0.5"
+              title="This live score has not updated recently and may be behind the live state."
+            >
+              Stale
+            </span>
+          )}
           {isLive && (
             <span className="font-mono text-xs font-semibold flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-pulse" />
               <span className="text-amber-300">
-                {fixture.isDelayed ? 'Delayed – In-Play' : 'In-Play'}
-                {fixture.minute ? ` ${fixture.minute}'` : ''}
+                {isHalfTime
+                  ? 'Half-Time'
+                  : fixture.isDelayed
+                  ? 'Delayed – In-Play'
+                  : 'In-Play'}
+                {!isHalfTime && fixture.minute ? ` ${fixture.minute}'` : ''}
               </span>
             </span>
           )}
