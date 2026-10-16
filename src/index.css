@@ -1,11 +1,77 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens (typography + spacing).
+ * Values mirror `src/design/tokens.ts`. Tailwind v4 turns each token into utilities:
+ *   --font-sans / --font-mono        -> font-sans / font-mono
+ *   --text-<name>                    -> text-<name>
+ *   --spacing-<name>                 -> px-<name> / py-<name> / p-<name> / gap-<name> / mt-<name> ...
+ *   --container-<name>               -> max-w-<name>
+ * The numeric --spacing-* scale intentionally overlays Tailwind's default so the base 4px grid is
+ * owned by the token file. Do not add raw hex/sizes to components; add a token here instead.
+ */
+@theme {
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --text-2xs: 0.625rem;
+  --text-2xs--line-height: 1.5;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.5;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.4;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.333;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 1.2;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 1.111;
+
+  /* Base 4px spacing scale. */
+  --spacing: 0.25rem;
+  --spacing-px: 1px;
+  --spacing-0: 0;
+  --spacing-0\.5: 0.125rem;
+  --spacing-1: 0.25rem;
+  --spacing-1\.5: 0.375rem;
+  --spacing-2: 0.5rem;
+  --spacing-2\.5: 0.625rem;
+  --spacing-3: 0.75rem;
+  --spacing-3\.5: 0.875rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.25rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-10: 2.5rem;
+  --spacing-12: 3rem;
+  --spacing-16: 4rem;
+  --spacing-20: 5rem;
+  --spacing-24: 6rem;
+
+  /* Semantic layout spacing for the shell. */
+  --spacing-header: 4rem;
+  --spacing-gutter: 1rem;
+  --spacing-gutter-sm: 1.5rem;
+  --spacing-gutter-lg: 2rem;
+  --spacing-section: 1.5rem;
+  --spacing-section-lg: 2rem;
+  --spacing-section-xl: 5rem;
+
+  --container-shell: 80rem;
+}
+
 @layer base {
   :root {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: var(--font-sans);
   }
   code, pre, .font-mono {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: var(--font-mono);
   }
 }
 
