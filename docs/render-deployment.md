@@ -2,10 +2,21 @@
 
 This gives the app a permanent public URL you can check at any time.
 
+## Live service
+
+| | |
+|---|---|
+| URL | https://touchline-football.onrender.com |
+| Service | `Touchline-football-` (`srv-db936o8n74is73dbhe6g`) |
+| Runtime | Docker (`./Dockerfile`), region `oregon`, free plan |
+| Auto-deploy | on push to `main` |
+| Health check | `/api/status` |
+
 ## What runs
 
-One Node web service that builds the Vite client bundle and serves it together
-with the Express API from `server.ts`. Render injects `PORT`; `server.ts` reads it.
+A single container that installs dependencies, builds the Vite client bundle,
+and serves it together with the Express API from `server.ts` via `tsx`. Render
+injects `PORT`; `server.ts` reads it (falling back to 3000 locally).
 
 ## Prerequisites
 
@@ -13,20 +24,30 @@ with the Express API from `server.ts`. Render injects `PORT`; `server.ts` reads 
 - A football-data.org token for `FOOTBALL_DATA_API_KEY`
   (https://www.football-data.org/client/register).
 
-## Deploy
+## Deploy from scratch
 
 1. In Render, choose **New + → Blueprint** and select this repository.
-2. Render reads `render.yaml` and creates the `project-touchline` web service.
+2. Render reads `render.yaml` and creates the `Touchline-football-` web service.
 3. When prompted, paste the value for `FOOTBALL_DATA_API_KEY`. This is the only
    required secret. It is stored by Render and never committed to the repo.
-4. Deploy. Render runs:
-
-   - Build: `npm ci --include=dev && npm run build`
-   - Start: `npm start` (`tsx server.ts`)
-   - Health check: `/api/status`
+4. Deploy. Render builds the image (`Dockerfile`: `npm install --include=dev`
+   then `npm run build`) and starts `npm start` (`tsx server.ts`), with a health
+   check on `/api/status`.
 
 Your stable URL is shown on the service page
-(`https://<service-name>.onrender.com`).
+(`https://touchline-football.onrender.com`).
+
+## Fixing a failed build
+
+If a build fails with `npm error code ERESOLVE`, a dependency's declared version
+range conflicts with a peer requirement. Bump the offending package rather than
+adding `--legacy-peer-deps`, then confirm with a clean install:
+
+```
+rm -rf node_modules && npm ci --include=dev && npm run build
+```
+
+`package-lock.json` is committed, so `npm ci` is reproducible.
 
 ## Optional settings
 
@@ -51,8 +72,9 @@ stay `false` unless you deliberately turn them on.
 ## Local production check
 
 ```
-npm install
+npm ci --include=dev
 npm run build
 NODE_ENV=production PORT=4000 npm start
 curl -s localhost:4000/api/status
 ```
+
