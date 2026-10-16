@@ -121,3 +121,20 @@ football-data.org and SportAPI.ai.
   credit. Odds coverage is no longer 0 when the integration is enabled.
 - Regression tests: `tests/phase6b-odds-api-integration.test.ts` (29 tests, injected fetch,
   no network).
+
+## Deployment — Render (live)
+- Live URL: https://touchline-football.onrender.com (service `Touchline-football-`,
+  id `srv-db936o8n74is73dbhe6g`, free plan, region `oregon`, auto-deploy on push to `main`).
+- Runtime is **Docker** (`./Dockerfile`): `npm install --include=dev` then `npm run build`,
+  start `npm start` (= `tsx server.ts`). `render.yaml` mirrors this.
+- `server.ts` reads `PORT` from the env (falls back to 3000); `tsx` is a **dependency**, not
+  a devDependency, because `NODE_ENV=production` installs omit devDependencies.
+- `package-lock.json` is committed and `npm ci` is the install path. Do not add
+  `--legacy-peer-deps` to silence conflicts — bump the offending package instead.
+- Known trap: `esbuild` must satisfy vite 8's peer range (`^0.27 || ^0.28`). A stale
+  `esbuild@^0.25.0` broke the Docker build with ERESOLVE. esbuild is not imported directly.
+- Secrets live in the Render dashboard (`FOOTBALL_DATA_API_KEY` only). Never commit `.env`.
+- Render API access is via a `RENDER_API_KEY` bearer token; deploy status:
+  `GET /v1/services/{id}/deploys`, logs: `GET /v1/logs?ownerId=…&resource=…`.
+- Free tier sleeps after ~15 min idle; first hit cold-starts in ~30–60 s.
+
