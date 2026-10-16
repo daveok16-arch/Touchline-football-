@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "predictions": "tsx scripts/model-predictions.ts",
     "lint": "tsc --noEmit",
     "test": "vitest run"
   },
