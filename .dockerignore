@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+coverage
+.git
+.gitignore
+.env
+.env.*
+*.log
+.phase3-cache
+.phaseQ-shadow
+.phaseS-collector
