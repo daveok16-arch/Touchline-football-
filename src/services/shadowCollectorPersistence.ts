@@ -11,11 +11,14 @@
 
 import fs from 'fs';
 import path from 'path';
-import { CollectorState, emptyCollectorState, COLLECTOR_STATE_SCHEMA_VERSION } from './shadowCollector';
+import { CollectorState, emptyCollectorState, COLLECTOR_STATE_SCHEMA_VERSION, BudgetPersisted, BudgetSink } from './shadowCollector';
 import { ShadowSnapshot, EMPTY_SHADOW, serializeShadowSnapshot, parseShadowSnapshot, SHADOW_SCHEMA_VERSION } from './shadowLedger';
 
 /** Default research-only combined-state location (gitignored). */
 export const SHADOW_COLLECTOR_BUNDLE_PATH = path.resolve(process.cwd(), '.phaseS-collector', 'collector-bundle.json');
+
+/** Default write-ahead budget sink location (gitignored), beside the bundle. */
+export const SHADOW_COLLECTOR_BUDGET_PATH = path.resolve(process.cwd(), '.phaseS-collector', 'collector-budget.json');
 
 export interface CollectorBundle {
   bundleSchemaVersion: number;
@@ -140,6 +143,50 @@ export class CollectorBundleStore {
       return { ok: true, commit };
     } catch (e) {
       return { ok: false, error: (e as Error).message };
+    }
+  }
+}
+
+/**
+ * Write-ahead budget sink. Each `save` writes the small counter atomically (temp → rename) so a
+ * crash between a charged request and the bundle commit cannot lose usage. `load` never throws;
+ * a missing or corrupt file yields null (the bundle counter remains the backstop).
+ *
+ * Kept separate from the state/snapshot bundle: the budget is an independent monotonic counter,
+ * so persisting it on its own does not touch the state/snapshot consistency invariant.
+ */
+export class FileBudgetSink implements BudgetSink {
+  constructor(private readonly filePath: string) {}
+
+  get path(): string {
+    return this.filePath;
+  }
+
+  save(budget: BudgetPersisted): boolean {
+    try {
+      fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
+      const tmp = `${this.filePath}.tmp-${process.pid}`;
+      fs.writeFileSync(tmp, JSON.stringify(budget), 'utf8');
+      fs.renameSync(tmp, this.filePath);
+      return true;
+    } catch {
+      // Not durable: the caller must fail closed rather than issue an unaccounted request.
+      return false;
+    }
+  }
+
+  load(): BudgetPersisted | null {
+    try {
+      if (!fs.existsSync(this.filePath)) return null;
+      const parsed = JSON.parse(fs.readFileSync(this.filePath, 'utf8')) as Partial<BudgetPersisted>;
+      if (!parsed || typeof parsed.dayKey !== 'string' || typeof parsed.dayCount !== 'number') return null;
+      return {
+        dayKey: parsed.dayKey,
+        dayCount: parsed.dayCount,
+        minuteStamps: Array.isArray(parsed.minuteStamps) ? parsed.minuteStamps.filter((t) => Number.isFinite(t)) : undefined,
+      };
+    } catch {
+      return null;
     }
   }
 }
