@@ -1,22 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Globe,
-  ChevronDown,
-  Menu,
-  X,
-  Radio,
-} from 'lucide-react';
+import { Globe, ChevronDown, Menu, X } from 'lucide-react';
 import { SUPPORTED_TIMEZONES } from '../utils/timezone';
 import { FixtureService } from '../services/fixtureService';
+import { Container } from './Container';
+import { NAV_ITEMS, isNavActive } from './navLinks';
 
-interface HeaderProps {
+interface AppHeaderProps {
   currentView: string;
   onNavigate: (view: string, matchId?: string) => void;
   timezoneId: string;
   onTimezoneChange: (tzId: string) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+/**
+ * Persistent application header. Sticky, token-sized (`h-header`) and always mounted by the
+ * layout. Holds the brand wordmark, the primary navigation links, the timezone switcher and the
+ * provider-connection indicator.
+ */
+export const AppHeader: React.FC<AppHeaderProps> = ({
   currentView,
   onNavigate,
   timezoneId,
@@ -40,20 +41,13 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, []);
 
-  const navLinks = [
-    { id: 'home', label: 'Overview' },
-    { id: 'fixtures', label: 'Fixtures' },
-    { id: 'competitions', label: 'Competitions' },
-    { id: 'standings', label: 'Standings' },
-  ];
-
   const currentTzObj =
     SUPPORTED_TIMEZONES.find((t) => t.id === timezoneId) || SUPPORTED_TIMEZONES[0];
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-[#0D1526]/95 backdrop-blur-md border-b border-slate-800/80">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-4">
+    <header className="sticky top-0 z-40 w-full h-header bg-[#0D1526]/95 backdrop-blur-md border-b border-slate-800/80">
+      <Container className="h-full">
+        <div className="flex items-center justify-between h-full gap-4">
           {/* Brand Wordmark */}
           <div className="flex items-center gap-3">
             <button
@@ -61,13 +55,13 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-2.5 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-md"
             >
               <div className="w-8 h-8 rounded bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500/25 transition-colors">
-                <span className="font-bold text-sm tracking-wider">TL</span>
+                <span className="text-sm font-bold tracking-wider">TL</span>
               </div>
               <div className="flex flex-col">
                 <span className="text-base font-bold tracking-tight text-white group-hover:text-emerald-400 transition-colors whitespace-nowrap">
                   Project Touchline
                 </span>
-                <span className="text-[10px] text-slate-400 tracking-wide font-normal">
+                <span className="text-2xs font-normal tracking-wide text-slate-400">
                   Football Intelligence
                 </span>
               </div>
@@ -75,13 +69,14 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-300">
-            {navLinks.map((link) => {
-              const isActive = currentView === link.id;
+          <nav aria-label="Primary" className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-300">
+            {NAV_ITEMS.map((link) => {
+              const isActive = isNavActive(link.id, currentView);
               return (
                 <button
                   key={link.id}
                   onClick={() => onNavigate(link.id)}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`relative py-1 transition-colors whitespace-nowrap shrink-0 hover:text-white ${
                     isActive ? 'text-emerald-400 font-semibold' : 'text-slate-300'
                   }`}
@@ -99,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-3">
             {/* Subtle Provider Connection Pill */}
             <div
-              className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded bg-slate-900 border border-slate-800 text-[11px] text-slate-400"
+              className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded bg-slate-900 border border-slate-800 text-2xs text-slate-400"
               title={
                 isConfigured
                   ? 'Connected to Football-Data API (Delayed free tier)'
@@ -111,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
                   isConfigured ? 'bg-emerald-400' : 'bg-slate-500'
                 }`}
               />
-              <span className="font-mono text-[10px]">
+              <span className="text-2xs font-mono">
                 {isConfigured === null
                   ? 'Checking...'
                   : isConfigured
@@ -139,7 +134,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="absolute right-0 mt-2 w-72 bg-[#0F182A] border border-slate-700 rounded shadow-2xl py-1 z-50">
                   <div className="px-3 py-2 border-b border-slate-800">
                     <p className="text-xs font-semibold text-slate-200">Display Timezone</p>
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-2xs text-slate-400">
                       Default: Africa/Lagos (West Africa Time, UTC+1)
                     </p>
                   </div>
@@ -159,9 +154,9 @@ export const Header: React.FC<HeaderProps> = ({
                       >
                         <div className="flex flex-col">
                           <span>{tz.label}</span>
-                          <span className="text-[10px] text-slate-500">{tz.city}</span>
+                          <span className="text-2xs text-slate-500">{tz.city}</span>
                         </div>
-                        <span className="font-mono text-[11px] text-slate-400">{tz.abbr}</span>
+                        <span className="text-2xs font-mono text-slate-400">{tz.abbr}</span>
                       </button>
                     ))}
                   </div>
@@ -179,13 +174,13 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
         </div>
-      </div>
+      </Container>
 
       {/* Mobile Menu Drawer */}
       {mobileMenuOpen && (
         <div className="md:hidden bg-[#0D1526] border-b border-slate-800 px-4 py-3 space-y-1">
-          {navLinks.map((link) => {
-            const isActive = currentView === link.id;
+          {NAV_ITEMS.map((link) => {
+            const isActive = isNavActive(link.id, currentView);
             return (
               <button
                 key={link.id}
@@ -193,6 +188,7 @@ export const Header: React.FC<HeaderProps> = ({
                   onNavigate(link.id);
                   setMobileMenuOpen(false);
                 }}
+                aria-current={isActive ? 'page' : undefined}
                 className={`w-full text-left px-3 py-2 text-sm rounded transition-colors ${
                   isActive
                     ? 'bg-emerald-950/40 text-emerald-300 font-semibold'
