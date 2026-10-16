@@ -1,0 +1,47 @@
+# Render blueprint for Project Touchline.
+#
+# Connect the repository in Render ("New +" -> "Blueprint"), point it at this
+# file, then set the secret environment variables listed below in the Render
+# dashboard (or let Render prompt you for the ones marked `sync: false`).
+#
+# The service builds the Vite bundle and then serves it, together with the
+# Express API, from `server.ts` via tsx.
+
+services:
+  - type: web
+    name: project-touchline
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/status
+    envVars:
+      # --- required ---
+      - key: NODE_ENV
+        value: production
+
+      # Football data provider token (football-data.org free tier).
+      # Set the real value in the Render dashboard.
+      - key: FOOTBALL_DATA_API_KEY
+        sync: false
+
+      # --- optional providers / research flags (all OFF by default) ---
+      - key: SPORTAPI_KEY
+        sync: false
+      - key: FIVE_DOLLAR_KEY
+        sync: false
+      - key: ODDS_API_KEY
+        sync: false
+      - key: ENABLE_ODDS_API
+        value: "false"
+      - key: ODDS_MONTHLY_REQUEST_BUDGET
+        value: "300"
+      - key: ENABLE_PROBABILITY_CALIBRATION
+        value: "false"
+      - key: ENABLE_SHADOW_CALIBRATION_RECORDING
+        value: "false"
+      - key: ENABLE_SHADOW_COLLECTOR
+        value: "false"
