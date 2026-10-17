@@ -132,17 +132,24 @@ export const HomeView: React.FC<HomeViewProps> = ({
   };
 
   // Evaluate Daily Match Intelligence
-  const intelligenceList: MatchIntelligence[] = useMemo(() => {
+  const { intelligenceList, evaluatedFixtures, usingFallback } = useMemo(() => {
     // 1. Check if fixtures for the current view contain genuinely upcoming matches
     const currentUpcoming = fixtures.filter((f) => isGenuinelyUpcomingFixture(f));
 
-    // If current view has scheduled matches, evaluate those; otherwise evaluate all upcoming scheduled fixtures
-    const targetFixtures = currentUpcoming.length > 0
-      ? currentUpcoming
-      : allUpcomingFixtures.filter((f) => isGenuinelyUpcomingFixture(f));
+    // When the selected date has no genuinely upcoming match, rank the next upcoming fixtures
+    // instead. `usingFallback` is surfaced to the user so a later date's predictions are never
+    // mistaken for the selected day's own predictions.
+    const usingFallback = currentUpcoming.length === 0;
+    const targetFixtures = usingFallback
+      ? allUpcomingFixtures.filter((f) => isGenuinelyUpcomingFixture(f))
+      : currentUpcoming;
 
     const evaluated = targetFixtures.map((f) => evaluateMatchIntelligence(f, standingsMap));
-    return rankEligibleMatches(evaluated);
+    return {
+      intelligenceList: rankEligibleMatches(evaluated),
+      evaluatedFixtures: evaluated,
+      usingFallback,
+    };
   }, [fixtures, allUpcomingFixtures, standingsMap]);
 
   // Group fixtures by canonical competition (single heading per competition)
@@ -210,6 +217,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
       {/* Daily Match Intelligence Section */}
       <DailyMatchIntelligence
         intelligenceList={intelligenceList}
+        evaluatedFixtures={evaluatedFixtures}
+        usingFallback={usingFallback}
+        selectedDateLabel={getActiveDateLabel()}
         loading={loading}
         timezoneId={timezoneId}
         onNavigateToMatch={(id) => onNavigate('match', id)}

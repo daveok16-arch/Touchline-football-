@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { MatchIntelligence } from '../types/football';
 import { formatKickoffTime } from '../utils/timezone';
+import { classifyIntelligenceOutcome } from '../analysis/matchPredictionReport';
 import {
   Sparkles,
   ArrowRight,
@@ -8,10 +9,17 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
+  CalendarClock,
 } from 'lucide-react';
 
 interface DailyMatchIntelligenceProps {
   intelligenceList: MatchIntelligence[];
+  /** Every fixture that was evaluated for this view (eligible and excluded), for the skip summary. */
+  evaluatedFixtures: MatchIntelligence[];
+  /** True when the selected date had no upcoming match and later fixtures were ranked instead. */
+  usingFallback: boolean;
+  /** Human-readable label for the currently selected date, used in the fallback notice. */
+  selectedDateLabel: string;
   loading: boolean;
   timezoneId: string;
   onNavigateToMatch: (matchId: string) => void;
@@ -19,6 +27,9 @@ interface DailyMatchIntelligenceProps {
 
 export const DailyMatchIntelligence: React.FC<DailyMatchIntelligenceProps> = ({
   intelligenceList,
+  evaluatedFixtures,
+  usingFallback,
+  selectedDateLabel,
   loading,
   timezoneId,
   onNavigateToMatch,
@@ -26,7 +37,22 @@ export const DailyMatchIntelligence: React.FC<DailyMatchIntelligenceProps> = ({
   const [showIneligible, setShowIneligible] = useState(false);
 
   const eligibleMatches = intelligenceList.filter((m) => m.isEligible && m.probabilities);
-  const ineligibleMatches = intelligenceList.filter((m) => !m.isEligible);
+  // Excluded fixtures come from the full evaluated set: `intelligenceList` holds only ranked
+  // (eligible) matches, so filtering it for ineligible ones always produced an empty list.
+  const ineligibleMatches = evaluatedFixtures.filter((m) => !m.isEligible);
+
+  // Count why each evaluated fixture was skipped, ordered by frequency (descending).
+  const skipSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const ev of evaluatedFixtures) {
+      if (ev.isEligible) continue;
+      const outcome = classifyIntelligenceOutcome(ev);
+      counts.set(outcome, (counts.get(outcome) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([outcome, count]) => ({ outcome, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [evaluatedFixtures]);
 
   return (
     <section className="bg-gradient-to-b from-[#0F172A] to-[#0B1120] border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl relative overflow-hidden">
@@ -51,6 +77,41 @@ export const DailyMatchIntelligence: React.FC<DailyMatchIntelligenceProps> = ({
         </p>
       </div>
 
+      {/* Fallback notice: the ranked list is not for the selected date */}
+      {!loading && usingFallback && eligibleMatches.length > 0 && (
+        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-3">
+          <CalendarClock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-xs leading-relaxed">
+            <p className="font-semibold text-amber-200">
+              No upcoming matches left on {selectedDateLabel}
+            </p>
+            <p className="text-amber-200/80 mt-0.5">
+              The predictions below are the next upcoming fixtures from later dates — they are not
+              for {selectedDateLabel}.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Why matches were skipped (shown whenever anything was excluded) */}
+      {!loading && skipSummary.length > 0 && (
+        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/50 px-3.5 py-3">
+          <p className="text-[11px] font-semibold text-slate-300 mb-1.5">
+            Why {skipSummary.reduce((n, s) => n + s.count, 0)} match(es) were skipped
+          </p>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1">
+            {skipSummary.map((s) => (
+              <li key={s.outcome} className="text-[11px] text-slate-400">
+                <span className="font-mono font-semibold text-slate-200 tabular-nums">
+                  {s.count}
+                </span>{' '}
+                {s.outcome}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Main Content Area */}
       {loading ? (
         <div className="py-6 space-y-4">
@@ -70,7 +131,9 @@ export const DailyMatchIntelligence: React.FC<DailyMatchIntelligenceProps> = ({
             No Eligible Upcoming Fixtures to Rank for this Date
           </h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-            Evaluates scheduled upcoming matches across Premier League, UEFA Champions League, La Liga, and Serie A when verified league standings are available.
+            Evaluates scheduled upcoming matches across Premier League, UEFA Champions League, La
+            Liga, and Serie A. A match is ranked only when both teams have played at least 3 league
+            matches, so early-season and early Champions League matchdays produce no predictions.
           </p>
           {ineligibleMatches.length > 0 && (
             <p className="text-xs text-amber-400/90 pt-1">

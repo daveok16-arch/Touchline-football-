@@ -78,6 +78,18 @@ football-data.org and SportAPI.ai.
   spent. Never fill missing odds with mock or fabricated prices.
 - Tests: `tests/odds-value-analysis.test.ts` (mock data is labelled test data).
 
+## Daily Intelligence UX (transparency rules)
+- The overview never shows another date's predictions unlabelled: when the selected date has no
+  genuinely upcoming match, `DailyMatchIntelligence` renders an amber notice saying the ranked list
+  is not for the selected date (`usingFallback`).
+- Skip reasons are always summarised above the list ("Why N match(es) were skipped") using
+  `classifyIntelligenceOutcome`. `evaluatedFixtures` (all evaluated, eligible and excluded) must be
+  passed separately from `intelligenceList` (ranked/eligible only) — filtering the ranked list for
+  ineligible matches always yields an empty set.
+- Champions League is supported but structurally cannot be ranked until matchday 4: every CL team
+  starts at `playedGames = 2`, below the frozen 3-match cold-start floor. This is intended, not a
+  bug; the empty state says so explicitly.
+
 ## Phase 5 – operational readiness (verified behaviour)
 - Competition capability is per-competition, never blanket. 78 competitions are registered;
   only PL/CL/PD/SA have football-data.org fixtures + working standings + prediction
