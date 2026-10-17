@@ -508,3 +508,28 @@ describe('findTeamInStandings name normalisation', () => {
   });
 });
 
+
+describe('evaluatePoissonProbabilities xG bounds (frozen parity)', () => {
+  // A high-scoring attack vs a leaky defence so the raw xG would exceed the 4.5 ceiling.
+  const attacker = entry('Attack FC', 20, 80, 40);
+  const leaky = entry('Leaky FC', 20, 20, 60);
+
+  it('applies the frozen [0.3, 4.5] clamp when no override is given', () => {
+    const p = evaluatePoissonProbabilities(attacker, leaky, 2.7)!;
+    expect(p.expectedGoalsHome).toBeLessThanOrEqual(4.5);
+    expect(p.expectedGoalsAway).toBeGreaterThanOrEqual(0.3);
+  });
+
+  it('reproduces the frozen numerics exactly when the override equals the frozen bounds', () => {
+    const a = evaluatePoissonProbabilities(attacker, leaky, 2.7);
+    const b = evaluatePoissonProbabilities(attacker, leaky, 2.7, { expectedGoalsBounds: [0.3, 4.5] });
+    expect(b).toEqual(a);
+  });
+
+  it('honours a research override without touching the default behaviour', () => {
+    const clamped = evaluatePoissonProbabilities(attacker, leaky, 2.7)!;
+    const wide = evaluatePoissonProbabilities(attacker, leaky, 2.7, { expectedGoalsBounds: [0, 12] })!;
+    expect(wide.expectedGoalsHome).toBeGreaterThanOrEqual(clamped.expectedGoalsHome);
+  });
+});
+

@@ -16,6 +16,7 @@ import {
   calculateLeagueAverages,
   evaluatePoissonProbabilities,
   findTeamInStandings,
+  PoissonOptions,
 } from './predictionEngine';
 import { EvaluationSample, Outcome, outcomeFromScore, ProbabilityTriplet } from './predictionMetrics';
 
@@ -225,6 +226,11 @@ export interface BacktestOptions {
   fromMs?: number;
   /** Optional cap: only evaluate matches before this time. */
   toMs?: number;
+  /**
+   * Research override for the frozen xG clamp. Omit to reproduce V1 exactly; only the
+   * research runner passes this.
+   */
+  poisson?: PoissonOptions;
 }
 
 export interface BacktestResult {
@@ -318,7 +324,7 @@ export function runBacktest(fixtures: Fixture[], options: BacktestOptions = {}):
       }
 
       const { avgGoalsPerGame } = calculateLeagueAverages(table);
-      const probs = evaluatePoissonProbabilities(homeStanding, awayStanding, avgGoalsPerGame);
+      const probs = evaluatePoissonProbabilities(homeStanding, awayStanding, avgGoalsPerGame, options.poisson);
 
       if (!probs) {
         exclusions.MODEL_NULL++;

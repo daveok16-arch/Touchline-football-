@@ -59,6 +59,32 @@ football-data.org and SportAPI.ai.
   `scripts/fetch-historical.ts` (caches FD history under gitignored `.phase3-cache/`)
   and `scripts/run-evaluation.ts`.
 
+## Research findings — what NOT to "fix" (backtested, do not re-litigate)
+Measured on the local cache (`.phase3-cache/`, PL/PD/SA/CL 2023–2025, walk-forward,
+strictly-prior tables). Held-out test = season years 2024 & 2025, paired block
+bootstrap (seed 20261015, block 20, 2000 resamples). Reproduce with the scripts named.
+
+- **The xG clamp `[0.3, 4.5]` is NOT a defect.** Removing it does not help. It binds for
+  only 3.5% of predictions (121/3465), and on held-out data the clamp is marginally
+  *better* (log loss meanDiff = -0.00104, CI [-0.00230, -0.00001], P(V1 better)=0.976);
+  RPS and Brier show no reliable difference. The 4.50 in "xG: 4.50 - 0.76" is cosmetic.
+  Re-run: `npx tsx scripts/run-xg-clamp-evaluation.ts`.
+- **Dixon-Coles is not better than the frozen Poisson.** DC raw vs Frozen RPS
+  meanDiff = -0.00015, CI [-0.00226, 0.00192] — no reliable difference, stable across
+  block sizes 1–80. Swapping the model would add complexity for no measured gain.
+- **The one real, measured improvement is temperature calibration.** DC+Cal vs Frozen RPS
+  meanDiff = -0.00265, CI [-0.00510, -0.00015]; log loss -0.01415, CI
+  [-0.02406, -0.00429]. But the calibration-only control (Frozen+Cal vs Frozen) captures
+  essentially all of it: DC+Cal vs Frozen+Cal is a tie (CI includes 0). So the win is the
+  calibration layer, not the model. The candidate already exists and is flag-gated
+  (`ENABLE_PROBABILITY_CALIBRATION`, default OFF; `src/services/calibrationCandidate.ts`).
+  Re-run: `npx tsx scripts/run-walkforward-evaluation.ts`.
+- Consequence: the "structural ceiling" is model coverage and evidence, not a missing
+  algorithm. Do not enable DC or remove the clamp without new held-out evidence.
+- The `expectedGoalsBounds` option on `evaluatePoissonProbabilities` / `runBacktest` exists
+  only for the ablation above. Production callers must omit it (defaults reproduce V1
+  exactly; covered by a parity test).
+
 ## Odds layer (Phase 4 — comparison only, never feeds the model)
 - Odds stay strictly separate from fixtures/results/standings and never change the frozen
   model. `/api/odds/:id` compares bookmaker 1X2 prices against the frozen probabilities.
