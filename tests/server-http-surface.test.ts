@@ -1,11 +1,16 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 
 /**
  * Integration tests for the production HTTP surface. These spawn the real server process
  * (the same entrypoint Render runs) rather than importing it, because server.ts starts
  * listening at module load. No mocks: these assert the actual wire behaviour.
+ *
+ * NODE_ENV=production makes the server serve from dist/, so the SPA fallback needs a real
+ * build. Build it here if absent rather than depending on the caller having run `npm run
+ * build` first, which otherwise fails only in CI and only on the fallback assertion.
  */
 
 const PORT = 13399;
@@ -13,6 +18,11 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const ROOT = path.resolve(__dirname, '..');
 
 let server: ChildProcess;
+
+function ensureBuilt() {
+  if (fs.existsSync(path.join(ROOT, 'dist', 'index.html'))) return;
+  execFileSync('npx', ['vite', 'build'], { cwd: ROOT, stdio: 'ignore' });
+}
 
 async function waitForReady(timeoutMs = 40_000) {
   const deadline = Date.now() + timeoutMs;
@@ -29,13 +39,14 @@ async function waitForReady(timeoutMs = 40_000) {
 }
 
 beforeAll(async () => {
+  ensureBuilt();
   server = spawn('npx', ['tsx', 'server.ts'], {
     cwd: ROOT,
     env: { ...process.env, PORT: String(PORT), NODE_ENV: 'production' },
     stdio: 'ignore',
   });
   await waitForReady();
-}, 60_000);
+}, 120_000);
 
 afterAll(async () => {
   if (!server || server.killed) return;
