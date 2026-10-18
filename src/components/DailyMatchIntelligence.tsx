@@ -77,6 +77,15 @@ export const DailyMatchIntelligence: React.FC<DailyMatchIntelligenceProps> = ({
         </p>
       </div>
 
+      {/* Measured overconfidence notice: the frozen model overstates high-confidence picks.
+          On held-out 2024/2025 it rated fixtures >=80% at 0.864 while they occurred 0.729. */}
+      {!loading && eligibleMatches.length > 0 && (
+        <p className="mt-3 text-[11px] text-slate-400 leading-relaxed">
+          High-confidence picks are the model's weakest area: on 2024/25 data, matches it rated
+          above 80% occurred 73% of the time. Treat the top probabilities as upper estimates.
+        </p>
+      )}
+
       {/* Fallback notice: the ranked list is not for the selected date */}
       {!loading && usingFallback && eligibleMatches.length > 0 && (
         <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-3">

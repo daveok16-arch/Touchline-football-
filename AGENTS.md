@@ -76,9 +76,25 @@ bootstrap (seed 20261015, block 20, 2000 resamples). Reproduce with the scripts 
   meanDiff = -0.00265, CI [-0.00510, -0.00015]; log loss -0.01415, CI
   [-0.02406, -0.00429]. But the calibration-only control (Frozen+Cal vs Frozen) captures
   essentially all of it: DC+Cal vs Frozen+Cal is a tie (CI includes 0). So the win is the
-  calibration layer, not the model. The candidate already exists and is flag-gated
-  (`ENABLE_PROBABILITY_CALIBRATION`, default OFF; `src/services/calibrationCandidate.ts`).
-  Re-run: `npx tsx scripts/run-walkforward-evaluation.ts`.
+  calibration layer, not the model.
+- **Calibration is validated but NOT wired, and `ENABLE_PROBABILITY_CALIBRATION` is inert.**
+  No production or API path reads that flag: `evaluatePoissonProbabilities` does not import
+  calibration, `server.ts` reads only `ENABLE_ODDS_API`, and `isCalibrationEnabled` is
+  referenced only by its own unit test. The candidate in
+  `src/services/calibrationCandidate.ts` is a library used by research scripts, not a live
+  layer. Setting the env var today changes nothing.
+  - Calibration-only validation (frozen model + one global temperature), predeclared
+    protocol, held-out 2024 & 2025, paired block bootstrap: RPS meanDiff = -0.00285,
+    CI [-0.00426, -0.00142], P(better)=1.000; stable across block sizes 1-80; T = 1.325.
+  - The effect is concentrated on high-confidence picks, which is exactly the overconfidence
+    users notice: on fixtures the frozen model rated >= 0.80, predicted 0.864 vs observed
+    0.729. Calibration moves those to 0.780 (gap 0.136 -> 0.051).
+  - To activate, calibration must be fitted from strictly-prior settled results
+    (`buildCandidateCalibration` enforces this) and applied inside the prediction path for
+    user-facing output. That is a deliberate production change: it alters displayed
+    probabilities, so it needs prospective shadow validation first. Do not enable it by
+    setting the flag alone - the flag does nothing.
+  - Re-run: `npx tsx scripts/run-calibration-validation.ts`.
 - Consequence: the "structural ceiling" is model coverage and evidence, not a missing
   algorithm. Do not enable DC or remove the clamp without new held-out evidence.
 - The `expectedGoalsBounds` option on `evaluatePoissonProbabilities` / `runBacktest` exists

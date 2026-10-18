@@ -139,4 +139,31 @@ describe('DailyMatchIntelligence – fallback and skip transparency', () => {
     expect(screen.getByText(/1 match\(es\) excluded by data guardrails/)).toBeTruthy();
     expect(screen.getByText(/Inspect Excluded Fixtures/)).toBeTruthy();
   });
+
+  it('states the measured overconfidence on high-confidence picks', () => {
+    const { evaluated, ranked } = build([fixture('m1', 'Home FC', 'Away FC', FUTURE)]);
+    render(
+      <DailyMatchIntelligence
+        {...baseProps}
+        intelligenceList={ranked}
+        evaluatedFixtures={evaluated}
+        usingFallback={false}
+      />
+    );
+    // The model rated >=80% picks at 0.864 while they occurred 0.729 on held-out data.
+    expect(screen.getByText(/rated above 80% occurred 73% of the time/)).toBeTruthy();
+  });
+
+  it('does not show the overconfidence notice when nothing is eligible', () => {
+    const { evaluated, ranked } = build([fixture('m1', 'Cold FC', 'Warm FC', FUTURE)]);
+    render(
+      <DailyMatchIntelligence
+        {...baseProps}
+        intelligenceList={ranked}
+        evaluatedFixtures={evaluated}
+        usingFallback={false}
+      />
+    );
+    expect(screen.queryByText(/occurred 73% of the time/)).toBeNull();
+  });
 });
