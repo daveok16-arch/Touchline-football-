@@ -5,6 +5,7 @@ import {
   evaluatePoissonProbabilities,
   evaluateMatchIntelligence,
   findTeamInStandings,
+  normalizeTeamName,
   isGenuinelyUpcomingFixture,
   FROZEN_MODEL_VERSION,
   SUPPORTED_INTELLIGENCE_COMPETITIONS,
@@ -461,3 +462,74 @@ describe('Phase 3 – evaluation aggregation', () => {
     expect(samples[0].outcome).toBe(2);
   });
 });
+
+describe('findTeamInStandings name normalisation', () => {
+  const table = (names: string[]): StandingEntry[] =>
+    names.map((n, i) => entry(n, 10, 10, 10, `id-${i}`));
+
+  it('keeps club initials instead of stripping them mid-word', () => {
+    // Regression: /fc|cf|afc|sc/g used to turn "SSC Napoli" into "s napoli".
+    const t = standings(table(['SSC Napoli', 'Sevilla FC', 'SC Freiburg', 'Al Ahly SC']));
+    expect(normalizeTeamName('SSC Napoli')).toBe('ssc napoli');
+    expect(normalizeTeamName('Sevilla FC')).toBe('sevilla');
+    // Only trailing club-type words are dropped; a leading "SC" is part of the name.
+    expect(normalizeTeamName('SC Freiburg')).toBe('sc freiburg');
+    expect(normalizeTeamName('Al Ahly SC')).toBe('al ahly');
+    // None of these mangled forms should be produced.
+    expect(normalizeTeamName('SSC Napoli')).not.toBe('s napoli');
+  });
+
+  it('matches when one side carries a leading club-type word', () => {
+    const t = standings(table(['SC Freiburg']));
+    expect(findTeamInStandings('x', 'Freiburg', t)?.team.name).toBe('SC Freiburg');
+  });
+
+  it('matches a club whose provider id changed, using the name fallback', () => {
+    const t = standings(table(['SSC Napoli', 'Genoa CFC']));
+    const found = findTeamInStandings('CHANGED-ID', 'SSC Napoli', t);
+    expect(found?.team.name).toBe('SSC Napoli');
+  });
+
+  it('folds diacritics so accented names still match', () => {
+    const t = standings(table(['CF Montreal']));
+    expect(findTeamInStandings('x', 'CF Montréal', t)?.team.name).toBe('CF Montreal');
+  });
+
+  it('does not match a shorter name against an unrelated longer word', () => {
+    // "inter" must not match "internazionale" as a raw substring.
+    const t = standings(table(['FC Internazionale Milano']));
+    expect(findTeamInStandings('x', 'Inter', t)).toBeNull();
+  });
+
+  it('still prefers an exact id match over the name fallback', () => {
+    const t = standings(table(['Alpha FC', 'Beta FC']));
+    const found = findTeamInStandings('id-1', 'Alpha FC', t);
+    expect(found?.team.name).toBe('Beta FC'); // id wins even when the name disagrees
+  });
+});
+
+
+describe('evaluatePoissonProbabilities xG bounds (frozen parity)', () => {
+  // A high-scoring attack vs a leaky defence so the raw xG would exceed the 4.5 ceiling.
+  const attacker = entry('Attack FC', 20, 80, 40);
+  const leaky = entry('Leaky FC', 20, 20, 60);
+
+  it('applies the frozen [0.3, 4.5] clamp when no override is given', () => {
+    const p = evaluatePoissonProbabilities(attacker, leaky, 2.7)!;
+    expect(p.expectedGoalsHome).toBeLessThanOrEqual(4.5);
+    expect(p.expectedGoalsAway).toBeGreaterThanOrEqual(0.3);
+  });
+
+  it('reproduces the frozen numerics exactly when the override equals the frozen bounds', () => {
+    const a = evaluatePoissonProbabilities(attacker, leaky, 2.7);
+    const b = evaluatePoissonProbabilities(attacker, leaky, 2.7, { expectedGoalsBounds: [0.3, 4.5] });
+    expect(b).toEqual(a);
+  });
+
+  it('honours a research override without touching the default behaviour', () => {
+    const clamped = evaluatePoissonProbabilities(attacker, leaky, 2.7)!;
+    const wide = evaluatePoissonProbabilities(attacker, leaky, 2.7, { expectedGoalsBounds: [0, 12] })!;
+    expect(wide.expectedGoalsHome).toBeGreaterThanOrEqual(clamped.expectedGoalsHome);
+  });
+});
+

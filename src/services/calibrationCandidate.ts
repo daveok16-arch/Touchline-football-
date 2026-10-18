@@ -38,10 +38,27 @@ export const CALIBRATION_CANDIDATE_ID = 'TEMP_SCALE_CANDIDATE_V1';
 /**
  * True only when the calibration flag is explicitly enabled.
  * Defaults to disabled so production behaviour is unchanged.
+ *
+ * NOTE: this reports intent, it does not activate anything. No production or API path
+ * reads this flag yet — the frozen engine does not import calibration, and `server.ts`
+ * reads only `ENABLE_ODDS_API`. Setting the env var changes no user-facing probability.
+ * See {@link CALIBRATION_ACTIVATION_STATUS} and the calibration findings in AGENTS.md.
  */
 export function isCalibrationEnabled(env: Record<string, string | undefined> = process.env): boolean {
   return env[CALIBRATION_FLAG_ENV] === 'true';
 }
+
+/** Machine-readable statement of whether the calibration candidate is live. */
+export const CALIBRATION_ACTIVATION_STATUS = {
+  /** Calibration is not applied anywhere in the prediction path. */
+  wired: false,
+  /** Validation verdict on held-out data. */
+  validatedImprovement: true,
+  /** What must happen before the displayed probabilities may change. */
+  requiredBeforeActivation:
+    'Fit from strictly-prior settled results and run prospective shadow validation; ' +
+    'activation changes user-facing probabilities.',
+} as const;
 
 /**
  * One historical observation available for fitting. `outcomeKnownAtMs` is the instant the

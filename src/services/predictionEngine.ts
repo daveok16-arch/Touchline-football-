@@ -23,6 +23,18 @@ export const RANKING_CRITERION_DESCRIPTION =
 export const SUPPORTED_INTELLIGENCE_COMPETITIONS = ['PL', 'CL', 'PD', 'SA'];
 
 /**
+ * Frozen V1 expected-goals clamp. Part of the V1 contract: changing it changes every V1
+ * probability, so it is exposed only as a research override and never altered in place.
+ */
+export const FROZEN_XG_BOUNDS: readonly [number, number] = [0.3, 4.5];
+
+/** Optional research overrides for {@link evaluatePoissonProbabilities}. */
+export interface PoissonOptions {
+  /** Overrides {@link FROZEN_XG_BOUNDS}. */
+  expectedGoalsBounds?: readonly [number, number];
+}
+
+/**
  * Conservative stale-cache guardrail:
  * Verifies that a scheduled fixture is genuinely upcoming and has not already reached kickoff.
  */
@@ -49,7 +61,48 @@ export function calculatePoissonProbability(lambda: number, k: number): number {
 }
 
 /**
+ * Normalises a club name for fallback matching.
+ *
+ * Only whole-word club-type suffixes are removed, so legal prefixes and initials survive:
+ * "SSC Napoli" -> "ssc napoli" (NOT "s napoli"), "Sevilla FC" -> "sevilla",
+ * "Al Ahly SC" -> "al ahly". Diacritics are folded so "Montréal" matches "Montreal".
+ */
+export function normalizeTeamName(name: string): string {
+  return (name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+\b(fc|cf|afc|sc|ac|ss|ssc|cd|ud|sv|bsc|fk)\b\s*$/, '')
+    .trim();
+}
+
+/**
+ * True when two normalised club names refer to the same club. Uses whole-token containment
+ * rather than raw substring containment so "inter" does not match "internazionale".
+ */
+function teamNamesMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const aTokens = a.split(' ');
+  const bTokens = b.split(' ');
+  // One name fully contains the other's token sequence, in order.
+  const containsSeq = (hay: string[], needle: string[]): boolean => {
+    if (needle.length === 0 || needle.length > hay.length) return false;
+    for (let i = 0; i + needle.length <= hay.length; i++) {
+      if (needle.every((t, j) => hay[i + j] === t)) return true;
+    }
+    return false;
+  };
+  return containsSeq(aTokens, bTokens) || containsSeq(bTokens, aTokens);
+}
+
+/**
  * Finds team entry in league standings table.
+ *
+ * ID match first. The name fallback only runs when the provider id is absent or changed, and it
+ * uses whole-word normalisation so initials are never stripped from a club's actual name.
  */
 export function findTeamInStandings(teamId: string, teamName: string, standings: CompetitionStandings): StandingEntry | null {
   if (!standings?.table || !Array.isArray(standings.table)) {
@@ -59,12 +112,12 @@ export function findTeamInStandings(teamId: string, teamName: string, standings:
   const byId = standings.table.find((e) => String(e.team?.id) === String(teamId));
   if (byId) return byId;
 
-  // Next try normalized name matching
-  const cleanTarget = teamName.toLowerCase().replace(/fc|cf|afc|sc/g, '').trim();
+  // Fallback: whole-word name matching (diacritic-folded).
+  const cleanTarget = normalizeTeamName(teamName);
   const byName = standings.table.find((e) => {
-    const entryName = (e.team?.name || '').toLowerCase().replace(/fc|cf|afc|sc/g, '').trim();
-    const shortName = (e.team?.shortName || '').toLowerCase().replace(/fc|cf|afc|sc/g, '').trim();
-    return entryName.includes(cleanTarget) || cleanTarget.includes(entryName) || shortName === cleanTarget;
+    const entryName = normalizeTeamName(e.team?.name || '');
+    const shortName = normalizeTeamName(e.team?.shortName || '');
+    return teamNamesMatch(entryName, cleanTarget) || teamNamesMatch(shortName, cleanTarget);
   });
   return byName || null;
 }
@@ -99,11 +152,15 @@ export function calculateLeagueAverages(standings: CompetitionStandings): {
 
 /**
  * Evaluates match using bivariate Poisson probability distribution.
+ *
+ * `options.expectedGoalsBounds` overrides the [0.3, 4.5] xG clamp. The default reproduces the
+ * frozen V1 numerics exactly; only research/backtest callers pass an override.
  */
 export function evaluatePoissonProbabilities(
   homeStanding: StandingEntry,
   awayStanding: StandingEntry,
-  leagueAvgGoalsPerGame: number
+  leagueAvgGoalsPerGame: number,
+  options?: PoissonOptions
 ): PoissonProbabilities | null {
   if (
     !homeStanding ||
@@ -134,9 +191,9 @@ export function evaluatePoissonProbabilities(
   let expectedGoalsHome = avgGoalsPerTeam * homeAttackStrength * awayDefenseStrength * HOME_ADVANTAGE;
   let expectedGoalsAway = avgGoalsPerTeam * awayAttackStrength * homeDefenseStrength * AWAY_DISADVANTAGE;
 
-  // Clamp expected goals to realistic bounds
-  expectedGoalsHome = Math.max(0.3, Math.min(4.5, expectedGoalsHome));
-  expectedGoalsAway = Math.max(0.3, Math.min(4.5, expectedGoalsAway));
+  const [xGLower, xGUpper] = options?.expectedGoalsBounds ?? FROZEN_XG_BOUNDS;
+  expectedGoalsHome = Math.max(xGLower, Math.min(xGUpper, expectedGoalsHome));
+  expectedGoalsAway = Math.max(xGLower, Math.min(xGUpper, expectedGoalsAway));
 
   const maxGoals = 7;
   let pHomeWin = 0;

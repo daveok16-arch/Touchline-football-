@@ -13,6 +13,7 @@ import {
   CALIBRATION_FLAG_ENV,
   MIN_CALIBRATION_SAMPLES,
   CALIBRATION_CANDIDATE_ID,
+  CALIBRATION_ACTIVATION_STATUS,
   isCalibrationEnabled,
   fitCandidateCalibration,
   calibrateTriplet,
@@ -211,3 +212,18 @@ describe('Phase P – frozen model contract preserved', () => {
     expect(MODEL_REGISTRY_ID).toBe('touchline-canonical-poisson');
   });
 });
+
+describe('Phase P – activation status is honest', () => {
+  it('reports calibration as validated but NOT wired', () => {
+    expect(CALIBRATION_ACTIVATION_STATUS.wired).toBe(false);
+    expect(CALIBRATION_ACTIVATION_STATUS.validatedImprovement).toBe(true);
+    expect(CALIBRATION_ACTIVATION_STATUS.requiredBeforeActivation).toMatch(/shadow validation/i);
+  });
+
+  it('the flag reflects intent only, and defaults off', () => {
+    // Enabling the flag is a declaration of intent; it does not itself change any output.
+    expect(isCalibrationEnabled({ [CALIBRATION_FLAG_ENV]: 'true' })).toBe(true);
+    expect(isCalibrationEnabled({})).toBe(false);
+  });
+});
+
