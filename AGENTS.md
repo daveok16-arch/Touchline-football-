@@ -211,4 +211,14 @@ bootstrap (seed 20261015, block 20, 2000 resamples). Reproduce with the scripts 
 - Regression tests: `tests/server-http-surface.test.ts` spawns the real server and asserts the
   JSON 404, the SPA fallback, and the headers.
 - CI: `.github/workflows/ci.yml` runs `npm ci`, typecheck, tests and build on PRs and `main`.
+  On a push to `main` it then triggers a Render deploy and polls it to completion, so a
+  failed build fails the workflow instead of silently serving stale code. Needs a
+  `RENDER_API_KEY` repository secret (Settings → Secrets and variables → Actions).
+- Deploys have historically never been push-triggered: every entry in the deploy history is
+  `trigger=api` or `trigger=manual`. The service config is correct (`autoDeploy: yes`,
+  `autoDeployTrigger: commit`, branch `main`), but the repository has **zero webhooks**, so
+  Render is never notified. Until that is fixed the Actions `deploy` job is the shipping path.
+- A deploy of a commit ships that commit's whole tree, so commits with no deploy event of
+  their own are still live if a later descendant was deployed. Check the live bundle hash
+  against a local `npm run build` to confirm what production is actually serving.
 

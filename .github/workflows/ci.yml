@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # Cancel superseded runs on the same ref instead of queueing them.
 concurrency:
@@ -33,3 +34,53 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # Deploys only after verify passes, and only for a push to main. Render's own
+  # auto-deploy has no test gate and its webhook is not registered on this repo, so this
+  # is the path that actually ships. Requires a RENDER_API_KEY repository secret.
+  deploy:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: render-deploy
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      # Not a secret: visible in the service URL and in render.yaml.
+      SERVICE_ID: srv-db936o8n74is73dbhe6g
+    steps:
+      - name: Trigger Render deploy
+        id: trigger
+        run: |
+          if [ -z "$RENDER_API_KEY" ]; then
+            echo "::error::RENDER_API_KEY secret is not set. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          response=$(curl -fsS -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json" \
+            "https://api.render.com/v1/services/$SERVICE_ID/deploys" \
+            -d "{\"commitId\":\"${GITHUB_SHA}\",\"clearCache\":\"do_not_clear\"}")
+          deploy_id=$(printf '%s' "$response" | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+          echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+          echo "Triggered deploy $deploy_id for commit ${GITHUB_SHA}"
+
+      # Poll to completion so a failed build is a failed workflow, not a silent bad deploy.
+      - name: Wait for deploy to go live
+        env:
+          DEPLOY_ID: ${{ steps.trigger.outputs.deploy_id }}
+        run: |
+          for _ in $(seq 1 60); do
+            status=$(curl -fsS -H "Authorization: Bearer $RENDER_API_KEY" \
+              "https://api.render.com/v1/services/$SERVICE_ID/deploys/$DEPLOY_ID" \
+              | python3 -c 'import sys,json; print(json.load(sys.stdin).get("status",""))')
+            echo "deploy $DEPLOY_ID: $status"
+            case "$status" in
+              live) echo "Deploy is live."; exit 0 ;;
+              build_failed|update_failed|canceled|pre_deploy_failed)
+                echo "::error::Render deploy failed with status: $status"
+                exit 1 ;;
+            esac
+            sleep 20
+          done
+          echo "::error::Timed out after 20 minutes waiting for the deploy to go live."
+          exit 1
