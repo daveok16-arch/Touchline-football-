@@ -44,6 +44,33 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
+/**
+ * Security headers. The CSP allowlist mirrors the resources the client actually loads:
+ * Google Fonts for the typeface, and the two crest/logo CDNs. 'unsafe-inline' is required
+ * because index.html carries an inline bootstrap script and the bundle injects inline styles.
+ */
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: https://crests.football-data.org https://a.espncdn.com",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; ')
+  );
+  next();
+});
+
 // In-memory cache structure
 interface CacheEntry<T> {
   data: T;
@@ -749,6 +776,12 @@ app.get('/api/odds/:id', async (req: Request, res: Response) => {
 
 // Vite Middleware for Development / Static serving for Production
 async function setupFrontend() {
+  // Unknown API routes must 404 as JSON. Without this the SPA catch-all below answers
+  // /api/* with the HTML shell and a 200, so clients parsing JSON fail obscurely.
+  app.use('/api', (_req: Request, res: Response) => {
+    res.status(404).json({ error: 'Not found.' });
+  });
+
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.resolve(__dirname, 'dist')));
     app.get('*', (_req, res) => {
@@ -768,9 +801,33 @@ async function setupFrontend() {
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  // Terminal error handler. Express 4 does not forward rejected promises, so this only
+  // catches errors passed to next(); the routes still own their own async try/catch.
+  app.use((err: any, _req: Request, res: Response, _next: any) => {
+    console.error('[Project Touchline] Unhandled request error:', err);
+    if (res.headersSent) return;
+    res.status(500).json({ error: 'Internal server error.' });
+  });
+
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Project Touchline] Server running at http://0.0.0.0:${PORT}`);
   });
+
+  // Render sends SIGTERM on deploy. Stop accepting connections and let in-flight
+  // requests drain; force-exit if they do not finish in time.
+  const shutdown = (signal: string) => {
+    console.log(`[Project Touchline] ${signal} received, shutting down.`);
+    server.close(() => {
+      console.log('[Project Touchline] Closed remaining connections.');
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.error('[Project Touchline] Forcing exit after shutdown timeout.');
+      process.exit(1);
+    }, 10_000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 setupFrontend().catch((err) => {
