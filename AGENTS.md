@@ -191,4 +191,24 @@ bootstrap (seed 20261015, block 20, 2000 resamples). Reproduce with the scripts 
 - Render API access is via a `RENDER_API_KEY` bearer token; deploy status:
   `GET /v1/services/{id}/deploys`, logs: `GET /v1/logs?ownerId=…&resource=…`.
 - Free tier sleeps after ~15 min idle; first hit cold-starts in ~30–60 s.
+- **Auto-deploy does not actually fire on push.** The repository has no GitHub webhook and
+  no deploy is created when a commit lands on `main`; the last real deploy was `trigger=api`.
+  After merging, confirm a deploy ran (`GET /v1/services/{id}/deploys`) or trigger one:
+  `POST /v1/services/{id}/deploys` with `{"commitId": "<sha>"}`. Do not assume the push shipped.
+
+## HTTP surface (production hardening)
+- `server.ts` sets security headers on every response (nosniff, frame DENY, referrer policy,
+  permissions policy, and a CSP allowlisting `crests.football-data.org`, `a.espncdn.com`,
+  `fonts.googleapis.com` and `fonts.gstatic.com`). If you add an external image host or font,
+  extend the CSP in `server.ts` or it will be blocked in production.
+- Unknown `/api/*` routes 404 as JSON. This is registered **before** the SPA catch-all; moving
+  it after would restore the old bug where `/api/*` answered with the HTML shell and a 200.
+- A terminal error middleware and SIGTERM/SIGINT graceful shutdown live in `setupFrontend`.
+  Render sends SIGTERM on deploy, so shutdown drains in-flight requests (10 s force-exit cap).
+- `/api/status` is local-only — it reports provider configuration and rate-limit state without
+  calling upstream. This matters because it is the Render health-check path; a health check
+  that hit the provider would burn the 10 req/min free-tier budget.
+- Regression tests: `tests/server-http-surface.test.ts` spawns the real server and asserts the
+  JSON 404, the SPA fallback, and the headers.
+- CI: `.github/workflows/ci.yml` runs `npm ci`, typecheck, tests and build on PRs and `main`.
 
